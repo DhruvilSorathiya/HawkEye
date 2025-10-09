@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Register New Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="${docroot}/static/img/hawkeye-icon.png">
+    <link href="${docroot}/static/css/HawkEye.css" rel="stylesheet">
+    <link href="${docroot}/static/node_modules/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: linear-gradient(135deg, #6f42c1 0%, #563d7c 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .container-box { background: rgba(255,255,255,.95); border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,.1); padding: 40px; max-width: 560px; width: 100%; margin: 20px; }
+        .title { text-align: center; color: #333; margin-bottom: 10px; font-weight: 300; font-size: 2.0em; }
+        .section-title { margin-top: 10px; font-weight: 600; color: #444; }
+        .form-group { margin-bottom: 16px; }
+        .btn-primary { background: linear-gradient(135deg, #6f42c1 0%, #563d7c 100%); border: none; }
+    </style>
+</head>
+<body>
+    <div class="container-box">
+        <h1 class="title">Register New Admin</h1>
+
+        % if error:
+        <div class="alert alert-danger"><i class="glyphicon glyphicon-exclamation-sign"></i> ${error}</div>
+        % endif
+
+        % if success:
+        <div class="alert alert-success"><i class="glyphicon glyphicon-ok"></i> ${success}</div>
+        % endif
+
+        <form method="post" action="${docroot}/register_admin">
+            <div class="section-title">New Admin Details</div>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" name="new_username" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" name="new_password" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" name="new_email" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" name="new_mobile" class="form-control" placeholder="Optional">
+            </div>
+
+            <div class="section-title">Authorization (Existing Admin)</div>
+            <div class="form-group">
+                <label>Existing Admin Username</label>
+                <input type="text" name="auth_username" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>Existing Admin Password</label>
+                <input type="password" name="auth_password" class="form-control" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">Create Admin</button>
+        </form>
+
+        <div class="login-links" style="margin-top:15px;">
+            <a href="${docroot}/login/admin">Back to Admin Login</a>
+        </div>
+    </div>
+
+    <script src="${docroot}/static/node_modules/jquery/dist/jquery.min.js"></script>
+    <script src="${docroot}/static/node_modules/bootstrap/dist/js/bootstrap.min.js"></script>
+</body>
+</html>
+
+

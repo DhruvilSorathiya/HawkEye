@@ -1,6 +1,6 @@
 version: "3"
 
 services:
-  spiderfoot:
+  hawkeye:
     volumes:
-      - .:/home/spiderfoot
+      - .:/home/hawkeye

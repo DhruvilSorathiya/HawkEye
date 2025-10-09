@@ -16,14 +16,14 @@ collections:
         value: INTERNET_NAME
       - method: exact
         field: module
-        value: sfp_dnsbrute
+        value: hep_dnsbrute
   - collect:
       - method: exact
         field: type
         value: INTERNET_NAME
       - method: exact
         field: module
-        value: not sfp_dnsbrute
+        value: not hep_dnsbrute
 aggregation:
   field: data
 analysis:

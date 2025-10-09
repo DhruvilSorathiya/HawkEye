@@ -1,7 +1,7 @@
 #
-# Spiderfoot Dockerfile (Full - includes all CLI tools, etc.)
+# Hawkeye Dockerfile (Full - includes all CLI tools, etc.)
 #
-# http://www.spiderfoot.net
+# http://www.hawkeye.net
 #
 # Written by: TheTechromancer
 #
@@ -28,9 +28,9 @@ RUN git clone https://github.com/urbanadventurer/WhatWeb \
     && gem install rchardet mongo json && cd /tools/WhatWeb \
     && bundle install && cd /tools
 
-RUN groupadd spiderfoot \
-    && useradd -m -g spiderfoot -d /home/spiderfoot -s /sbin/nologin \
-    -c "SpiderFoot User" spiderfoot
+RUN groupadd hawkeye \
+    && useradd -m -g hawkeye -d /home/hawkeye -s /sbin/nologin \
+    -c "HawkEye User" hawkeye
 
 # Install RetireJS
 RUN apt remove -y cmdtest \
@@ -67,18 +67,18 @@ RUN git clone https://github.com/drwetter/testssl.sh.git
 RUN pip3 install snallygaster trufflehog
 
 # Place database and logs outside installation directory
-ENV SPIDERFOOT_DATA /var/lib/spiderfoot
-ENV SPIDERFOOT_LOGS /var/lib/spiderfoot/log
-ENV SPIDERFOOT_CACHE /var/lib/spiderfoot/cache
+ENV SPIDERFOOT_DATA /var/lib/hawkeye
+ENV SPIDERFOOT_LOGS /var/lib/hawkeye/log
+ENV SPIDERFOOT_CACHE /var/lib/hawkeye/cache
 
 RUN mkdir -p $SPIDERFOOT_DATA || true \
     && mkdir -p $SPIDERFOOT_LOGS || true \
     && mkdir -p $SPIDERFOOT_CACHE || true \
-    && chown spiderfoot:spiderfoot $SPIDERFOOT_DATA \
-    && chown spiderfoot:spiderfoot $SPIDERFOOT_LOGS \
-    && chown spiderfoot:spiderfoot $SPIDERFOOT_CACHE
+    && chown hawkeye:hawkeye $SPIDERFOOT_DATA \
+    && chown hawkeye:hawkeye $SPIDERFOOT_LOGS \
+    && chown hawkeye:hawkeye $SPIDERFOOT_CACHE
 
-WORKDIR /home/spiderfoot
+WORKDIR /home/hawkeye
 COPY . .
 
 ENV VIRTUAL_ENV=/opt/venv
@@ -89,11 +89,11 @@ RUN python -m venv "$VIRTUAL_ENV"
 ARG REQUIREMENTS=requirements.txt
 COPY "$REQUIREMENTS" requirements.txt
 
-RUN chown -R spiderfoot:spiderfoot /tools
-RUN chown -R spiderfoot:spiderfoot "$VIRTUAL_ENV"
-RUN chown -R spiderfoot:spiderfoot "/home/spiderfoot"
+RUN chown -R hawkeye:hawkeye /tools
+RUN chown -R hawkeye:hawkeye "$VIRTUAL_ENV"
+RUN chown -R hawkeye:hawkeye "/home/hawkeye"
 
-USER spiderfoot
+USER hawkeye
 
 RUN pip install -U pip
 RUN pip install -r "$REQUIREMENTS"
@@ -109,13 +109,13 @@ RUN git clone https://github.com/Tuhinshubhra/CMSeeK && cd CMSeeK \
 RUN git clone https://github.com/EnableSecurity/wafw00f \
     && cd wafw00f \
     && python3 setup.py install
-WORKDIR /home/spiderfoot
+WORKDIR /home/hawkeye
 
 EXPOSE 5001
 
 # Run the application
-CMD python -c 'from spiderfoot import SpiderFootDb; \
-db = SpiderFootDb({"__database": "/var/lib/spiderfoot/spiderfoot.db"}); \
+CMD python -c 'from hawkeye import SpiderFootDb; \
+db = SpiderFootDb({"__database": "/var/lib/hawkeye/hawkeye.db"}); \
 db.configSet({ \
     "sfp_tool_dnstwist:dnstwistpath": "/opt/venv/bin/dnstwist", \
     "sfp_tool_cmseek:cmseekpath": "/tools/CMSeeK/cmseek.py", \

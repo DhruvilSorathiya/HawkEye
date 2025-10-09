@@ -18,8 +18,8 @@ collections:
       - method: exact
         field: module
         value:
-          - sfp_crt
-          - sfp_certspotter
+          - hep_crt
+          - hep_certspotter
   - collect:
       - method: exact
         field: type
@@ -27,9 +27,9 @@ collections:
       - method: exact
         field: module
         value:
-          - not sfp_crt
-          - not sfp_certspotter
-          - not sfp_dnsresolve
+          - not hep_crt
+          - not hep_certspotter
+          - not hep_dnsresolve
 aggregation:
   field: data
 analysis:

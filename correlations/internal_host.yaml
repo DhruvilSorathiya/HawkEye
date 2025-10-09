@@ -24,7 +24,7 @@ collections:
           - ^10\\..*
       - method: exact
         field: module
-        value: sfp_dnsresolve
+        value: hep_dnsresolve
 aggregation:
   field: data
 headline: "An internal host was found: {data}"

@@ -1,12 +1,3 @@
-#!/bin/bash
-# Update and lock all pip packages to latest version.
-#
-# Must be run from SpiderFoot root directory; ie:
-# ./test/update-requirements
-#
-# Requires lock-requirements:
-#   pip3 install lock-requirements
-
 lock requirements.txt
 git diff requirements.txt
 

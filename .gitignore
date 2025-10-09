@@ -1,81 +1,81 @@
-# SpiderFoot specific #
+# HawkEye specific #
 #######################
 /cache/
 /log/
-/spiderfoot.db*
+/hawkeye.db*
 passwd
-spiderfoot.crt
-spiderfoot.key
+hawkeye.crt
+hawkeye.key
 
-spiderfoot/static/node_modules/*
+hawkeye/static/node_modules/*
 
-spiderfoot/static/node_modules/alertifyjs/*
-spiderfoot/static/node_modules/alertifyjs/build/*
-spiderfoot/static/node_modules/alertifyjs/build/css/*
+hawkeye/static/node_modules/alertifyjs/*
+hawkeye/static/node_modules/alertifyjs/build/*
+hawkeye/static/node_modules/alertifyjs/build/css/*
 
-!spiderfoot/static/node_modules/alertifyjs/
-!spiderfoot/static/node_modules/alertifyjs/build/
-!spiderfoot/static/node_modules/alertifyjs/build/alertify.min.js
-!spiderfoot/static/node_modules/alertifyjs/build/css/
-!spiderfoot/static/node_modules/alertifyjs/build/css/alertify.min.css
+!hawkeye/static/node_modules/alertifyjs/
+!hawkeye/static/node_modules/alertifyjs/build/
+!hawkeye/static/node_modules/alertifyjs/build/alertify.min.js
+!hawkeye/static/node_modules/alertifyjs/build/css/
+!hawkeye/static/node_modules/alertifyjs/build/css/alertify.min.css
 
-spiderfoot/static/node_modules/bootstrap/*
-spiderfoot/static/node_modules/bootstrap/dist/*
-spiderfoot/static/node_modules/bootstrap/dist/js/*
-spiderfoot/static/node_modules/bootstrap/dist/css/*
-spiderfoot/static/node_modules/bootstrap/dist/fonts/*
+hawkeye/static/node_modules/bootstrap/*
+hawkeye/static/node_modules/bootstrap/dist/*
+hawkeye/static/node_modules/bootstrap/dist/js/*
+hawkeye/static/node_modules/bootstrap/dist/css/*
+hawkeye/static/node_modules/bootstrap/dist/fonts/*
 
-!spiderfoot/static/node_modules/bootstrap/
-!spiderfoot/static/node_modules/bootstrap/dist/
-!spiderfoot/static/node_modules/bootstrap/dist/js/
-!spiderfoot/static/node_modules/bootstrap/dist/js/bootstrap.min.js
-!spiderfoot/static/node_modules/bootstrap/dist/css/
-!spiderfoot/static/node_modules/bootstrap/dist/css/bootstrap.min.css
-!spiderfoot/static/node_modules/bootstrap/dist/fonts/
-!spiderfoot/static/node_modules/bootstrap/dist/fonts/glyphicons-halflings-regular.woff
-!spiderfoot/static/node_modules/bootstrap/dist/fonts/glyphicons-halflings-regular.woff2
+!hawkeye/static/node_modules/bootstrap/
+!hawkeye/static/node_modules/bootstrap/dist/
+!hawkeye/static/node_modules/bootstrap/dist/js/
+!hawkeye/static/node_modules/bootstrap/dist/js/bootstrap.min.js
+!hawkeye/static/node_modules/bootstrap/dist/css/
+!hawkeye/static/node_modules/bootstrap/dist/css/bootstrap.min.css
+!hawkeye/static/node_modules/bootstrap/dist/fonts/
+!hawkeye/static/node_modules/bootstrap/dist/fonts/glyphicons-halflings-regular.woff
+!hawkeye/static/node_modules/bootstrap/dist/fonts/glyphicons-halflings-regular.woff2
 
-spiderfoot/static/node_modules/jquery/*
-spiderfoot/static/node_modules/jquery/dist/*
+hawkeye/static/node_modules/jquery/*
+hawkeye/static/node_modules/jquery/dist/*
 
-!spiderfoot/static/node_modules/jquery/
-!spiderfoot/static/node_modules/jquery/dist/
-!spiderfoot/static/node_modules/jquery/dist/jquery.min.js
+!hawkeye/static/node_modules/jquery/
+!hawkeye/static/node_modules/jquery/dist/
+!hawkeye/static/node_modules/jquery/dist/jquery.min.js
 
-spiderfoot/static/node_modules/sigma/*
-spiderfoot/static/node_modules/sigma/build/*
-spiderfoot/static/node_modules/sigma/build/plugins/*
+hawkeye/static/node_modules/sigma/*
+hawkeye/static/node_modules/sigma/build/*
+hawkeye/static/node_modules/sigma/build/plugins/*
 
-!spiderfoot/static/node_modules/sigma/
-!spiderfoot/static/node_modules/sigma/build/
-!spiderfoot/static/node_modules/sigma/build/sigma.min.js
-!spiderfoot/static/node_modules/sigma/build/plugins/
-!spiderfoot/static/node_modules/sigma/build/plugins/sigma.parsers.json.min.js
-!spiderfoot/static/node_modules/sigma/build/plugins/sigma.plugins.dragNodes.min.js
-!spiderfoot/static/node_modules/sigma/build/plugins/sigma.layout.forceAtlas2.min.js
-!spiderfoot/static/node_modules/sigma/build/plugins/sigma.renderers.snapshot.min.js
+!hawkeye/static/node_modules/sigma/
+!hawkeye/static/node_modules/sigma/build/
+!hawkeye/static/node_modules/sigma/build/sigma.min.js
+!hawkeye/static/node_modules/sigma/build/plugins/
+!hawkeye/static/node_modules/sigma/build/plugins/sigma.parsers.json.min.js
+!hawkeye/static/node_modules/sigma/build/plugins/sigma.plugins.dragNodes.min.js
+!hawkeye/static/node_modules/sigma/build/plugins/sigma.layout.forceAtlas2.min.js
+!hawkeye/static/node_modules/sigma/build/plugins/sigma.renderers.snapshot.min.js
 
-spiderfoot/static/node_modules/tablesorter/*
-spiderfoot/static/node_modules/tablesorter/dist/*
-spiderfoot/static/node_modules/tablesorter/dist/js/*
-spiderfoot/static/node_modules/tablesorter/dist/css/*
-spiderfoot/static/node_modules/tablesorter/dist/js/extras/*
+hawkeye/static/node_modules/tablesorter/*
+hawkeye/static/node_modules/tablesorter/dist/*
+hawkeye/static/node_modules/tablesorter/dist/js/*
+hawkeye/static/node_modules/tablesorter/dist/css/*
+hawkeye/static/node_modules/tablesorter/dist/js/extras/*
 
-!spiderfoot/static/node_modules/tablesorter/
-!spiderfoot/static/node_modules/tablesorter/dist/
-!spiderfoot/static/node_modules/tablesorter/dist/css/
-!spiderfoot/static/node_modules/tablesorter/dist/css/jquery.tablesorter.pager.min.css
-!spiderfoot/static/node_modules/tablesorter/dist/css/theme.default.min.css
-!spiderfoot/static/node_modules/tablesorter/dist/js/
-!spiderfoot/static/node_modules/tablesorter/dist/js/jquery.tablesorter.min.js
-!spiderfoot/static/node_modules/tablesorter/dist/js/jquery.tablesorter.widgets.min.js
-!spiderfoot/static/node_modules/tablesorter/dist/js/extras/
-!spiderfoot/static/node_modules/tablesorter/dist/js/extras/jquery.tablesorter.pager.min.js
+!hawkeye/static/node_modules/tablesorter/
+!hawkeye/static/node_modules/tablesorter/dist/
+!hawkeye/static/node_modules/tablesorter/dist/css/
+!hawkeye/static/node_modules/tablesorter/dist/css/jquery.tablesorter.pager.min.css
+!hawkeye/static/node_modules/tablesorter/dist/css/theme.default.min.css
+!hawkeye/static/node_modules/tablesorter/dist/js/
+!hawkeye/static/node_modules/tablesorter/dist/js/jquery.tablesorter.min.js
+!hawkeye/static/node_modules/tablesorter/dist/js/jquery.tablesorter.widgets.min.js
+!hawkeye/static/node_modules/tablesorter/dist/js/extras/
+!hawkeye/static/node_modules/tablesorter/dist/js/extras/jquery.tablesorter.pager.min.js
 
-spiderfoot/static/node_modules/d3/*
+hawkeye/static/node_modules/d3/*
 
-!spiderfoot/static/node_modules/d3/
-!spiderfoot/static/node_modules/d3/d3.min.js
+!hawkeye/static/node_modules/d3/
+!hawkeye/static/node_modules/d3/d3.min.js
 
 # Compiled source #
 ###################

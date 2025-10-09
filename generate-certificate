@@ -4,17 +4,17 @@ if ! command -v openssl >/dev/null 2>&1 ; then
   exit 1
 fi
 
-if test -f spiderfoot.key; then
-  echo "Error: spiderfoot.key already exists"
+if test -f hawkeye.key; then
+  echo "Error: hawkeye.key already exists"
   exit 1
 fi
 
-if test -f spiderfoot.crt; then
-  echo "Error: spiderfoot.crt already exists"
+if test -f hawkeye.crt; then
+  echo "Error: hawkeye.crt already exists"
   exit 1
 fi
 
-openssl req -new -newkey rsa:4096 -sha256 -x509 -days 365 -nodes -out spiderfoot.crt -keyout spiderfoot.key -subj "/CN=localhost"
+openssl req -new -newkey rsa:4096 -sha256 -x509 -days 365 -nodes -out hawkeye.crt -keyout hawkeye.key -subj "/CN=localhost"
 
-chmod 600 spiderfoot.crt
-chmod 600 spiderfoot.key
+chmod 600 hawkeye.crt
+chmod 600 hawkeye.key

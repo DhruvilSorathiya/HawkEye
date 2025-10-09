@@ -14,9 +14,9 @@ collections:
       - method: exact
         field: module
         value:
-          - sfp_sslcert
-          - sfp_crt
-          - sfp_certspotter
+          - hep_sslcert
+          - hep_crt
+          - hep_certspotter
       - method: exact
         field: source.type
         value:

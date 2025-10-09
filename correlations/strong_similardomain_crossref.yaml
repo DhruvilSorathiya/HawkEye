@@ -13,7 +13,7 @@ collections:
   - collect:
       - method: exact
         field: module
-        value: sfp_crossref
+        value: hep_crossref
       - method: exact
         field: type
         value: AFFILIATE_INTERNET_NAME
