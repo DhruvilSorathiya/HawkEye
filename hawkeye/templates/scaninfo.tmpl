@@ -20,6 +20,7 @@
       <a id='btn-correlations' class="btn btn-default" onClick='browseCorrelations("${id}")'><i class='glyphicon glyphicon-exclamation-sign'></i>&nbsp;Correlations</a>
       <a id='btn-browse' class="btn btn-default" onClick='browseEventList("${id}")'><i class='glyphicon glyphicon-th-list'></i>&nbsp;Browse</a>
       <a id='btn-graph' class="btn btn-default" onClick='graphEvents("${id}")'><i class='glyphicon glyphicon-asterisk'></i>&nbsp;Graph</a>
+      <a id='btn-map' class="btn btn-default" onClick='viewGeoMap("${id}")'><i class='glyphicon glyphicon-globe'></i>&nbsp;Map</a>
       <a id='btn-info' class="btn btn-default" onClick='viewScanConfig("${id}")'><i class='glyphicon glyphicon-cog'></i>&nbsp;Scan Settings</a>
       <a id='btn-log' class="btn btn-default" onClick='viewScanLog("${id}")'><i class='glyphicon glyphicon-book'></i>&nbsp;Log</a>
     </div>
@@ -65,6 +66,8 @@
             </ul>
         </div>
   </div>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="${docroot}/static/node_modules/sigma/build/sigma.min.js"></script>
     <script src="${docroot}/static/node_modules/sigma/build/plugins/sigma.parsers.json.min.js"></script>
     <script src="${docroot}/static/node_modules/sigma/build/plugins/sigma.plugins.dragNodes.min.js"></script>
@@ -133,7 +136,7 @@
         function navTo(target) {
             var targets = [ "btn-browse", "btn-info", "btn-log", 
                 "btn-export", "btn-download-logs", "btn-viz",
-                "btn-status", "btn-graph", "btn-correlations" ]
+                "btn-status", "btn-graph", "btn-correlations", "btn-map" ]
             for (var i = 0; i < targets.length; i++) {
                 if (targets[i] == target) {
                     $("#" + targets[i]).addClass("active");
@@ -218,6 +221,8 @@
 
         // Visualisation
         function graphEvents(instanceId) {
+            $("#log-controls").remove();
+            $("#log-count-badge").remove();
             grid = "<div id='scansummary-content'><br />"
             grid += "<div class='col-md-12 graph-container' id='graph-container'></div>"
             grid += "</div>"
@@ -282,6 +287,8 @@
 
         // Scan status
         function scanSummaryView(instanceId) {
+            $("#log-controls").remove();
+            $("#log-count-badge").remove();
             grid = "<div id='scansummary-content'>";
             grid += "<div class='row'>";
             grid += "<div class='col-sm-7'>";
@@ -419,6 +426,7 @@
             if (!$("#corrwell_tr_" + correlationId).hasClass("hidden")) {
                 $("#corrwell_td_" + correlationId).empty();
                 $("#corrwell_tr_" + correlationId).addClass("hidden");
+                $("#corricon_" + correlationId).removeClass("glyphicon-chevron-down").addClass("glyphicon-chevron-right");
                 return;
             }
             he.fetchData('${docroot}/scaneventresults', { 'id': instanceId, 'correlationId': correlationId }, function(data) {
@@ -442,14 +450,17 @@
                     table += "</tr>";
                 }
                 table += "</tbody></table>"
-                $("#corrwell_td_" + correlationId).prepend(table);
+                $("#corrwell_td_" + correlationId).html(table);
                 $("#corrwell_tr_" + correlationId).removeClass("hidden");
+                $("#corricon_" + correlationId).removeClass("glyphicon-chevron-right").addClass("glyphicon-chevron-down");
             });
         }
 
         // Correlation results for the scan
         function browseCorrelations(instanceId) {
             $("#scansummary-content").remove();
+            $("#log-controls").remove();
+            $("#log-count-badge").remove();
             $("#loader").show();
             $("#btn-search").hide();
             $("#btn-export").hide();
@@ -468,7 +479,9 @@
                 table += "<thead><tr><th>Correlation</th><th>Risk</th><th>Data Elements</th></tr></thead><tbody>";
                 for (var i = 0; i < data.length; i++) {
                     table += "<tr>";
-                    table += "<td><a style='cursor: pointer' onClick='toggleCorrelation(\"" + instanceId + "\",\"" + data[i][0] + "\")'>" + data[i][1] + "</a>&nbsp;&nbsp;";
+                    table += "<td>";
+                    table += "<i class='glyphicon glyphicon-chevron-right' id='corricon_" + data[i][0] + "' style='color: #999; margin-right: 5px;'></i>";
+                    table += "<a style='cursor: pointer' onClick='toggleCorrelation(\"" + instanceId + "\",\"" + data[i][0] + "\")'>" + data[i][1] + "</a>&nbsp;&nbsp;";
                     table += "<i class='glyphicon glyphicon-question-sign' style='color: #ccc' rel='tooltip' data-title=\"" + data[i][5] + "\"></i>";
                     table += "</td>";
                     if (data[i][3] == "HIGH") {
@@ -506,36 +519,146 @@
         }
 
         // Logs for the scan
-        function viewScanLog(instanceId) {
+        var currentLogLimit = 500;
+        var currentLogType = null;
+        
+        function viewScanLog(instanceId, limit, logType) {
+            if (typeof limit === 'undefined') limit = 500;
+            if (typeof logType === 'undefined') logType = null;
+            
+            currentLogLimit = limit;
+            currentLogType = logType;
+            
             $("#scansummary-content").remove();
             $("#scanlogs-content").remove();
+            $("#log-controls").remove();
+            $("#log-count-badge").remove();  // Remove old badge
             $("#loader").show();
             $("#btn-search").hide();
             $("#btn-export").hide();
             $("#btn-download-logs").show();
             $("#scanreminder").hide();
             navTo("btn-log");
-            refresh = function() { viewScanLog(instanceId); }
-            he.fetchData('${docroot}/scanlog', {'id': instanceId}, function(data) {
-                            var table = "<table id='scanlogs-content' class='table table-bordered table-striped table-condensed small tablesorter' style='table-layout: fixed'>";
-                            table += "<thead><tr><th>Time</th><th>Component</th><th>Type</th><th>Event</th></tr></thead><tbody>";
-                            for (var i = 0; i < data.length; i++) {
-                                if (data[i][2] == "ERROR") {
-                                  table += "<tr class='danger'>";
-                                } else {
-                                  table += "<tr>";
-                                }
-                                table += "<td>" + data[i][0] + "</a></td>";
-                                table += "<td>" + data[i][1] + "</td>";
-                                table += "<td>" + data[i][2] + "</td>";
-                                table += "<td>" + data[i][3] + "</td>";
-                                table += "</tr>";
-                            }
-                            table += "</tbody></table>";
-                            $("#loader").fadeOut(500);
-                            $("#mainbody").append(table);
-                            $("#scanlogs-content").tablesorter({widgets: ["filter"], widgetOptions : { filter_searchDelay : 300, filter_hideFilters : false }});
+            refresh = function() { viewScanLog(instanceId, currentLogLimit, currentLogType); }
+            
+            // Add pagination controls
+            var controls = "<div id='log-controls' class='well well-sm' style='margin-bottom: 10px;'>";
+            controls += "<div class='row'>";
+            controls += "<div class='col-md-6'>";
+            controls += "<label style='margin-right: 10px;'><i class='glyphicon glyphicon-list'></i> Number of Logs to Display:</label> ";
+            controls += "<select id='log-limit' class='form-control' style='display:inline-block; width:auto;'>";
+            controls += "<option value='100'" + (limit == 100 ? " selected" : "") + ">Latest 100 logs</option>";
+            controls += "<option value='500'" + (limit == 500 ? " selected" : "") + ">Latest 500 logs</option>";
+            controls += "<option value='1000'" + (limit == 1000 ? " selected" : "") + ">Latest 1,000 logs</option>";
+            controls += "<option value='2000'" + (limit == 2000 ? " selected" : "") + ">Latest 2,000 logs</option>";
+            controls += "<option value='5000'" + (limit == 5000 ? " selected" : "") + ">Latest 5,000 logs</option>";
+            controls += "<option value='10000'" + (limit == 10000 ? " selected" : "") + ">Latest 10,000 logs</option>";
+            controls += "<option value='0'" + (limit == 0 ? " selected" : "") + ">All logs (Quite Slow)</option>";
+            controls += "</select>";
+            controls += "</div>";
+            controls += "<div class='col-md-6 text-right'>";
+            controls += "<button class='btn btn-primary' onclick='applyLogFilters(\"" + instanceId + "\")'>";
+            controls += "<i class='glyphicon glyphicon-refresh'></i> Load Logs</button>";
+            controls += "<span style='margin-left: 10px; color: #999; font-size: 0.9em;'>";
+            controls += "<i class='glyphicon glyphicon-info-sign'></i> Use dropdowns to filter by Component (200+ modules) or Type";
+            controls += "</span>";
+            controls += "</div>";
+            controls += "</div></div>";
+            $("#mainbody").append(controls);
+            
+            var params = {'id': instanceId, 'limit': limit};
+            
+            he.fetchData('${docroot}/scanlog', params, function(data) {
+                // Always show ALL possible components (all modules)
+                var componentOptions = [
+                    'helib', 'hescan', 'hep__stor_db', 'hep__stor_stdout', 'hep_abstractapi', 'hep_abusech', 'hep_abuseipdb', 'hep_abusix',
+                    'hep_accounts', 'hep_adblock', 'hep_adguard_dns', 'hep_ahmia', 'hep_alienvault', 'hep_alienvaultiprep', 'hep_apple_itunes',
+                    'hep_archiveorg', 'hep_arin', 'hep_azureblobstorage', 'hep_base64', 'hep_bgpview', 'hep_binaryedge', 'hep_bingsearch',
+                    'hep_bingsharedip', 'hep_binstring', 'hep_bitcoin', 'hep_bitcoinabuse', 'hep_bitcoinwhoswho', 'hep_blockchain',
+                    'hep_blocklistde', 'hep_botscout', 'hep_botvrij', 'hep_builtwith', 'hep_c99', 'hep_callername', 'hep_censys',
+                    'hep_certspotter', 'hep_cinsscore', 'hep_circllu', 'hep_citadel', 'hep_cleanbrowsing', 'hep_cleantalk', 'hep_clearbit',
+                    'hep_cloudflaredns', 'hep_coinblocker', 'hep_commoncrawl', 'hep_comodo', 'hep_company', 'hep_cookie', 'hep_countryname',
+                    'hep_creditcard', 'hep_crobat_api', 'hep_crossref', 'hep_crt', 'hep_crxcavator', 'hep_customfeed', 'hep_cybercrimetracker',
+                    'hep_debounce', 'hep_dehashed', 'hep_digitaloceanspace', 'hep_dns_for_family', 'hep_dnsbrute', 'hep_dnscommonsrv',
+                    'hep_dnsdb', 'hep_dnsdumpster', 'hep_dnsgrep', 'hep_dnsneighbor', 'hep_dnsraw', 'hep_dnsresolve', 'hep_dnszonexfer',
+                    'hep_dronebl', 'hep_duckduckgo', 'hep_email', 'hep_emailcrawlr', 'hep_emailformat', 'hep_emailrep', 'hep_emergingthreats',
+                    'hep_errors', 'hep_ethereum', 'hep_etherscan', 'hep_filemeta', 'hep_flickr', 'hep_focsec', 'hep_fortinet', 'hep_fraudguard',
+                    'hep_fsecure_riddler', 'hep_fullcontact', 'hep_fullhunt', 'hep_github', 'hep_gleif', 'hep_google_tag_manager',
+                    'hep_googlemaps', 'hep_googleobjectstorage', 'hep_googlesafebrowsing', 'hep_googlesearch', 'hep_gravatar',
+                    'hep_grayhatwarfare', 'hep_greensnow', 'hep_grep_app', 'hep_greynoise', 'hep_greynoise_community', 'hep_h1nobbdde',
+                    'hep_hackertarget', 'hep_hashes', 'hep_haveibeenpwned', 'hep_honeypot', 'hep_hosting', 'hep_hostio', 'hep_hunter',
+                    'hep_hybrid_analysis', 'hep_iban', 'hep_iknowwhatyoudownload', 'hep_intelx', 'hep_intfiles', 'hep_ipapico', 'hep_ipapicom',
+                    'hep_ipinfo', 'hep_ipqualityscore', 'hep_ipregistry', 'hep_ipstack', 'hep_isc', 'hep_jsonwhoiscom', 'hep_junkfiles',
+                    'hep_keybase', 'hep_koodous', 'hep_leakix', 'hep_maltiverse', 'hep_malwarepatrol', 'hep_metadefender', 'hep_mnemonic',
+                    'hep_multiproxy', 'hep_myspace', 'hep_nameapi', 'hep_names', 'hep_networksdb', 'hep_neutrinoapi', 'hep_numverify',
+                    'hep_onioncity', 'hep_onionsearchengine', 'hep_onyphe', 'hep_openbugbounty', 'hep_opencorporates', 'hep_opendns',
+                    'hep_opennic', 'hep_openphish', 'hep_openstreetmap', 'hep_pageinfo', 'hep_pastebin', 'hep_pgp', 'hep_phishstats',
+                    'hep_phishtank', 'hep_phone', 'hep_portscan_tcp', 'hep_projectdiscovery', 'hep_psbdmp', 'hep_pulsedive', 'hep_punkspider',
+                    'hep_quad9', 'hep_reversewhois', 'hep_ripe', 'hep_riskiq', 'hep_robtex', 'hep_s3bucket', 'hep_searchcode',
+                    'hep_securitytrails', 'hep_seon', 'hep_shodan', 'hep_similar', 'hep_skymem', 'hep_slideshare', 'hep_snov', 'hep_social',
+                    'hep_sociallinks', 'hep_socialprofiles', 'hep_sorbs', 'hep_spamcop', 'hep_spamhaus', 'hep_spider', 'hep_spur',
+                    'hep_spyonweb', 'hep_sslcert', 'hep_stackoverflow', 'hep_stevenblack_hosts', 'hep_strangeheaders', 'hep_subdomain_takeover',
+                    'hep_sublist3r', 'hep_surbl', 'hep_talosintel', 'hep_template', 'hep_textmagic', 'hep_threatcrowd', 'hep_threatfox',
+                    'hep_threatjammer', 'hep_threatminer', 'hep_tldsearch', 'hep_tool_cmseek', 'hep_tool_dnstwist', 'hep_tool_nbtscan',
+                    'hep_tool_nmap', 'hep_tool_nuclei', 'hep_tool_onesixtyone', 'hep_tool_retirejs', 'hep_tool_snallygaster',
+                    'hep_tool_testsslsh', 'hep_tool_trufflehog', 'hep_tool_wafw00f', 'hep_tool_wappalyzer', 'hep_tool_whatweb', 'hep_torch',
+                    'hep_torexits', 'hep_trashpanda', 'hep_trumail', 'hep_twilio', 'hep_twitter', 'hep_uceprotect', 'hep_urlscan', 'hep_venmo',
+                    'hep_viewdns', 'hep_virustotal', 'hep_voipbl', 'hep_vxvault', 'hep_webanalytics', 'hep_webframework', 'hep_webserver',
+                    'hep_whatcms', 'hep_whois', 'hep_whoisology', 'hep_whoxy', 'hep_wigle', 'hep_wikileaks', 'hep_wikipediaedits', 'hep_xforce',
+                    'hep_yandexdns', 'hep_zetalytics', 'hep_zonefiles', 'hep_zoneh'
+                ];
+                
+                // Always show all standard log types (even if not present in current data)
+                var typeOptions = ['DEBUG', 'ERROR', 'INFO', 'STATUS', 'WARNING'];
+                
+                var table = "<div id='log-count-badge' style='margin-bottom: 10px;'><span class='badge badge-info'>" + data.length + " logs loaded</span></div>";
+                table += "<table id='scanlogs-content' class='table table-bordered table-striped table-condensed small tablesorter' style='table-layout: fixed'>";
+                table += "<thead><tr><th style='width:15%'>Time</th><th style='width:20%'>Component</th><th style='width:10%'>Type</th><th style='width:55%'>Event</th></tr></thead><tbody>";
+                for (var i = 0; i < data.length; i++) {
+                    if (data[i][2] == "ERROR") {
+                        table += "<tr class='danger'>";
+                    } else if (data[i][2] == "WARNING") {
+                        table += "<tr class='warning'>";
+                    } else {
+                        table += "<tr>";
+                    }
+                    table += "<td>" + data[i][0] + "</td>";
+                    table += "<td>" + data[i][1] + "</td>";
+                    table += "<td>" + data[i][2] + "</td>";
+                    table += "<td style='word-wrap: break-word;'>" + data[i][3] + "</td>";
+                    table += "</tr>";
+                }
+                table += "</tbody></table>";
+                $("#loader").fadeOut(500);
+                $("#mainbody").append(table);
+                
+                // Initialize tablesorter with custom filter widgets (dropdowns for Component and Type)
+                $("#scanlogs-content").tablesorter({
+                    widgets: ["filter"],
+                    widgetOptions: {
+                        filter_searchDelay: 300,
+                        filter_hideFilters: false,
+                        filter_defaultFilter: { 1: '', 2: '' },  // Default to "All" for both dropdowns
+                        filter_functions: {
+                            1: true,  // Component column - use select dropdown
+                            2: true   // Type column - use select dropdown
+                        },
+                        filter_selectSource: {
+                            1: componentOptions,  // Component dropdown options
+                            2: typeOptions        // Type dropdown options
+                        },
+                        filter_placeholder: {
+                            search: 'Search...',
+                            select: 'All'  // Placeholder text for dropdowns
+                        }
+                    }
+                });
             });
+        }
+        
+        function applyLogFilters(instanceId) {
+            var limit = parseInt($('#log-limit').val());
+            viewScanLog(instanceId, limit, null);
         }
 
         // Summary of event types and counts for a scan
@@ -546,6 +669,8 @@
             // Remove pre-existing tables if they exist
             $("#scansummary-content").remove();
             $("#scanlogs-content").remove();
+            $("#log-controls").remove();
+            $("#log-count-badge").remove();
             navTo("btn-browse");
             $("#loader").show();
             $("#btn-export").show();
@@ -814,10 +939,113 @@
             $("#loader").fadeOut(500);
         }
 
+        // View geographical map of data points
+        function viewGeoMap(instanceId) {
+            $("#scansummary-content").remove();
+            $("#scanlogs-content").remove();
+            $("#log-controls").remove();
+            $("#log-count-badge").remove();
+            $("#loader").show();
+            $("#btn-export").hide();
+            $("#btn-download-logs").hide();
+            $("#btn-refresh").show();
+            $("#btn-search").hide();
+            $("#scanreminder").hide();
+            navTo("btn-map");
+            refresh = function() { viewGeoMap(instanceId); }
+            
+            he.fetchData('${docroot}/scangeodata', {'id': instanceId}, function(data) {
+                var mapContainer = "<div id='scansummary-content'>";
+                mapContainer += "<div class='row'>";
+                mapContainer += "<div class='col-md-12'>";
+                mapContainer += "<div class='panel panel-default'>";
+                mapContainer += "<div class='panel-heading'><i class='glyphicon glyphicon-globe'></i>&nbsp;&nbsp;Geographical Distribution</div>";
+                mapContainer += "<div class='panel-body'>";
+                
+                if (data.unique_count === 0) {
+                    mapContainer += "<div class='alert alert-info'><h4>No geographical data available.</h4>";
+                    mapContainer += "This scan did not collect any location information. ";
+                    mapContainer += "Location data is typically gathered from IP addresses and other network-related information.</div>";
+                } else {
+                    mapContainer += "<div class='alert alert-success'>";
+                    mapContainer += "<strong>Found " + data.unique_count + " unique location(s)</strong> ";
+                    mapContainer += "(" + data.total_count + " total data points)";
+                    mapContainer += "</div>";
+                    mapContainer += "<div id='map-container' style='height: 600px; width: 100%; border: 1px solid #ddd; border-radius: 4px;'></div>";
+                    mapContainer += "<div style='margin-top: 15px;'>";
+                    mapContainer += "<h4>Location Details</h4>";
+                    mapContainer += "<table class='table table-bordered table-striped'>";
+                    mapContainer += "<thead><tr><th>Location</th><th>Occurrences</th><th>Coordinates</th></tr></thead>";
+                    mapContainer += "<tbody>";
+                    
+                    for (var i = 0; i < data.locations.length; i++) {
+                        var loc = data.locations[i];
+                        mapContainer += "<tr>";
+                        mapContainer += "<td>" + loc.location + "</td>";
+                        mapContainer += "<td>" + loc.count + "</td>";
+                        if (loc.coordinates) {
+                            mapContainer += "<td>" + loc.coordinates.lat.toFixed(4) + ", " + loc.coordinates.lon.toFixed(4) + "</td>";
+                        } else {
+                            mapContainer += "<td><span class='text-muted'>Not geocoded</span></td>";
+                        }
+                        mapContainer += "</tr>";
+                    }
+                    
+                    mapContainer += "</tbody></table>";
+                    mapContainer += "</div>";
+                }
+                
+                mapContainer += "</div></div></div></div></div>";
+                
+                $("#loader").fadeOut(500);
+                $("#mainbody").append(mapContainer);
+                
+                // Initialize the map if we have location data
+                if (data.unique_count > 0) {
+                    var map = L.map('map-container').setView([20, 0], 2);
+                    
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                        maxZoom: 18,
+                    }).addTo(map);
+                    
+                    var markers = [];
+                    var bounds = [];
+                    
+                    // Add markers for each location
+                    for (var i = 0; i < data.locations.length; i++) {
+                        var loc = data.locations[i];
+                        if (loc.coordinates) {
+                            var marker = L.marker([loc.coordinates.lat, loc.coordinates.lon]).addTo(map);
+                            
+                            var popupContent = "<strong>" + loc.location + "</strong><br>";
+                            popupContent += "Occurrences: " + loc.count + "<br>";
+                            popupContent += "Coordinates: " + loc.coordinates.lat.toFixed(4) + ", " + loc.coordinates.lon.toFixed(4);
+                            
+                            marker.bindPopup(popupContent);
+                            markers.push(marker);
+                            bounds.push([loc.coordinates.lat, loc.coordinates.lon]);
+                        }
+                    }
+                    
+                    // Fit map to show all markers
+                    if (bounds.length > 0) {
+                        if (bounds.length === 1) {
+                            map.setView(bounds[0], 8);
+                        } else {
+                            map.fitBounds(bounds, {padding: [50, 50]});
+                        }
+                    }
+                }
+            });
+        }
+
         // View the configuration that was used for this scan
         function viewScanConfig(instanceId) {
             $("#scansummary-content").remove();
             $("#scanlogs-content").remove();
+            $("#log-controls").remove();
+            $("#log-count-badge").remove();
             $("#loader").show();
             $("#btn-export").hide();
             $("#btn-download-logs").hide();

@@ -12,8 +12,19 @@
                 </div>
                 <div class="panel-body">
                     <div class="row">
-                        <div class="col-md-3">
-                            <div class="stat-box">
+                        <div class="col-md-2">
+                            <div class="stat-box clickable" onclick="showAdminsList()" style="cursor: pointer;" title="Click to view all admins">
+                                <div class="stat-icon">
+                                    <i class="glyphicon glyphicon-star text-danger"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <div class="stat-number">${total_admins}</div>
+                                    <div class="stat-label">Total Admins</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="stat-box clickable" onclick="showUsersList()" style="cursor: pointer;" title="Click to view all users">
                                 <div class="stat-icon">
                                     <i class="glyphicon glyphicon-user text-primary"></i>
                                 </div>
@@ -24,7 +35,7 @@
                             </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="stat-box">
+                            <div class="stat-box clickable" onclick="showAllScans()" style="cursor: pointer;" title="Click to view all scans">
                                 <div class="stat-icon">
                                     <i class="glyphicon glyphicon-list text-success"></i>
                                 </div>
@@ -34,8 +45,8 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-3">
-                            <div class="stat-box">
+                        <div class="col-md-2">
+                            <div class="stat-box clickable" onclick="showActiveScans()" style="cursor: pointer;" title="Click to view active scans">
                                 <div class="stat-icon">
                                     <i class="glyphicon glyphicon-time text-warning"></i>
                                 </div>
@@ -46,7 +57,7 @@
                             </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="stat-box">
+                            <div class="stat-box clickable" onclick="showTodayLogins()" style="cursor: pointer;" title="Click to view today's login details">
                                 <div class="stat-icon">
                                     <i class="glyphicon glyphicon-calendar text-info"></i>
                                 </div>
@@ -95,8 +106,8 @@
                                     <td>${user[1]}</td>
                                     <td>${user[2]}</td>
                                     <td>${user[3] or 'N/A'}</td>
-                                    <td>${time.strftime('%Y-%m-%d %H:%M', time.localtime(user[4]))}</td>
-                                    <td>${time.strftime('%Y-%m-%d %H:%M', time.localtime(user[5])) if user[5] else 'Never'}</td>
+                                    <td>${user[4]}</td>
+                                    <td>${user[5]}</td>
                                     <td>
                                         % if user[6]:
                                         <span class="label label-success">Active</span>
@@ -289,6 +300,578 @@
         </div>
     </div>
 </div>
+
+<!-- Admins List Modal -->
+<div class="modal fade" id="adminsListModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-star"></i> All Admins</h4>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Mobile</th>
+                                <th>Created</th>
+                                <th>Last Login</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminsListBody">
+                            <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Users List Modal -->
+<div class="modal fade" id="usersListModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-user"></i> All Users</h4>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Mobile</th>
+                                <th>Created</th>
+                                <th>Last Login</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersListBody">
+                            <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Today's Logins Modal -->
+<div class="modal fade" id="todayLoginsModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-calendar"></i> Today's Logins</h4>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Account Type</th>
+                                <th>Login Time</th>
+                                <th>IP Address</th>
+                            </tr>
+                        </thead>
+                        <tbody id="todayLoginsBody">
+                            <tr><td colspan="4" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- All Scans Modal -->
+<div class="modal fade" id="allScansModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-list"></i> All Scans History</h4>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Scan Name</th>
+                                <th>Target</th>
+                                <th>Created By</th>
+                                <th>Account Type</th>
+                                <th>Created Date</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="allScansBody">
+                            <tr><td colspan="7" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Scans Modal -->
+<div class="modal fade" id="activeScansModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-time"></i> Active Scans</h4>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Scan Name</th>
+                                <th>Target</th>
+                                <th>Created By</th>
+                                <th>Started</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activeScansBody">
+                            <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Settings Modal -->
+<div class="modal fade" id="systemSettingsModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <button type="button" class="close" data-dismiss="modal" style="color: white;">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-wrench"></i> System Settings</h4>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="glyphicon glyphicon-info-sign"></i>
+                    <strong>Note:</strong> Changes to system settings take effect immediately. Please be careful when modifying these values.
+                </div>
+                <div id="systemSettingsContent">
+                    <div class="text-center">
+                        <i class="glyphicon glyphicon-refresh glyphicon-spin"></i> Loading settings...
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Logs Modal -->
+<div class="modal fade" id="systemLogsModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document" style="width: 95%; max-width: 1400px;">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                <button type="button" class="close" data-dismiss="modal" style="color: white;">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-list-alt"></i> System Logs</h4>
+            </div>
+            <div class="modal-body">
+                <!-- Filters -->
+                <div class="row" style="margin-bottom: 15px;">
+                    <div class="col-md-3">
+                        <label>Log Level</label>
+                        <select class="form-control" id="logLevelFilter">
+                            <option value="">All Levels</option>
+                            <option value="INFO">INFO</option>
+                            <option value="WARNING">WARNING</option>
+                            <option value="ERROR">ERROR</option>
+                            <option value="CRITICAL">CRITICAL</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>Category</label>
+                        <select class="form-control" id="logCategoryFilter">
+                            <option value="">All Categories</option>
+                            <option value="AUTH">Authentication</option>
+                            <option value="SCAN">Scan Operations</option>
+                            <option value="SYSTEM_SETTINGS">System Settings</option>
+                            <option value="USER_MANAGEMENT">User Management</option>
+                            <option value="DATABASE">Database</option>
+                            <option value="API">API</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>Limit</label>
+                        <select class="form-control" id="logLimitFilter">
+                            <option value="50">50 logs</option>
+                            <option value="100" selected>100 logs</option>
+                            <option value="250">250 logs</option>
+                            <option value="500">500 logs</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>&nbsp;</label>
+                        <div>
+                            <button class="btn btn-primary btn-block" onclick="applyLogFilters()">
+                                <i class="glyphicon glyphicon-filter"></i> Apply Filters
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row" style="margin-bottom: 15px;">
+                    <div class="col-md-12">
+                        <button class="btn btn-success btn-sm" onclick="exportSystemLogs()">
+                            <i class="glyphicon glyphicon-download"></i> Export to CSV
+                        </button>
+                        <button class="btn btn-info btn-sm" onclick="refreshSystemLogs()">
+                            <i class="glyphicon glyphicon-refresh"></i> Refresh
+                        </button>
+                        <span class="pull-right" id="logCountInfo"></span>
+                    </div>
+                </div>
+                
+                <!-- Logs Table -->
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-striped table-hover table-condensed" id="systemLogsTable">
+                        <thead style="position: sticky; top: 0; background: white; z-index: 10;">
+                            <tr>
+                                <th style="width: 140px;">Timestamp</th>
+                                <th style="width: 80px;">Level</th>
+                                <th style="width: 120px;">Category</th>
+                                <th>Message</th>
+                                <th style="width: 100px;">User/Admin</th>
+                                <th style="width: 120px;">IP Address</th>
+                            </tr>
+                        </thead>
+                        <tbody id="systemLogsBody">
+                            <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                <div class="text-center" id="logsPagination" style="margin-top: 15px;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+// Show admins list
+function showAdminsList() {
+    $('#adminsListModal').modal('show');
+    $.ajax({
+        url: '${docroot}/admin_get_admins',
+        type: 'POST',
+        dataType: 'json',
+        success: function(data) {
+            if (data.success) {
+                var html = '';
+                if (data.admins.length === 0) {
+                    html = '<tr><td colspan="6" class="text-center">No admins found</td></tr>';
+                } else {
+                    data.admins.forEach(function(admin) {
+                        var created = admin.created_at ? new Date(admin.created_at * 1000).toLocaleString() : 'N/A';
+                        var lastLogin = admin.last_login ? new Date(admin.last_login * 1000).toLocaleString() : 'Never';
+                        var status = admin.is_active ? '<span class="label label-success">Active</span>' : '<span class="label label-danger">Inactive</span>';
+                        html += '<tr>' +
+                            '<td>' + admin.username + '</td>' +
+                            '<td>' + admin.email + '</td>' +
+                            '<td>' + admin.mobile + '</td>' +
+                            '<td>' + created + '</td>' +
+                            '<td>' + lastLogin + '</td>' +
+                            '<td>' + status + '</td>' +
+                            '</tr>';
+                    });
+                }
+                $('#adminsListBody').html(html);
+            } else {
+                $('#adminsListBody').html('<tr><td colspan="6" class="text-danger">Error: ' + data.message + '</td></tr>');
+            }
+        },
+        error: function() {
+            $('#adminsListBody').html('<tr><td colspan="6" class="text-danger">Failed to load admins</td></tr>');
+        }
+    });
+}
+
+// Show users list
+function showUsersList() {
+    $('#usersListModal').modal('show');
+    $.ajax({
+        url: '${docroot}/admin_get_users',
+        type: 'POST',
+        dataType: 'json',
+        success: function(data) {
+            if (data.success) {
+                var html = '';
+                if (data.users.length === 0) {
+                    html = '<tr><td colspan="6" class="text-center">No users found</td></tr>';
+                } else {
+                    data.users.forEach(function(user) {
+                        var created = user.created_at ? new Date(user.created_at * 1000).toLocaleString() : 'N/A';
+                        var lastLogin = user.last_login ? new Date(user.last_login * 1000).toLocaleString() : 'Never';
+                        var status = user.is_active ? '<span class="label label-success">Active</span>' : '<span class="label label-danger">Inactive</span>';
+                        html += '<tr>' +
+                            '<td>' + user.username + '</td>' +
+                            '<td>' + user.email + '</td>' +
+                            '<td>' + user.mobile + '</td>' +
+                            '<td>' + created + '</td>' +
+                            '<td>' + lastLogin + '</td>' +
+                            '<td>' + status + '</td>' +
+                            '</tr>';
+                    });
+                }
+                $('#usersListBody').html(html);
+            } else {
+                $('#usersListBody').html('<tr><td colspan="6" class="text-danger">Error: ' + data.message + '</td></tr>');
+            }
+        },
+        error: function() {
+            $('#usersListBody').html('<tr><td colspan="6" class="text-danger">Failed to load users</td></tr>');
+        }
+    });
+}
+
+// Show today's logins
+function showTodayLogins() {
+    $('#todayLoginsModal').modal('show');
+    $.ajax({
+        url: '${docroot}/admin_get_today_logins',
+        type: 'POST',
+        dataType: 'json',
+        success: function(data) {
+            if (data.success) {
+                var html = '';
+                if (data.logins.length === 0) {
+                    html = '<tr><td colspan="4" class="text-center">No logins today</td></tr>';
+                } else {
+                    data.logins.forEach(function(login) {
+                        var loginTime = new Date(login.login_time * 1000).toLocaleString();
+                        var accountType = login.account_type === 'admin' ? 
+                            '<span class="label label-danger">Admin</span>' : 
+                            '<span class="label label-primary">User</span>';
+                        html += '<tr>' +
+                            '<td>' + login.username + '</td>' +
+                            '<td>' + accountType + '</td>' +
+                            '<td>' + loginTime + '</td>' +
+                            '<td>' + login.ip_address + '</td>' +
+                            '</tr>';
+                    });
+                }
+                $('#todayLoginsBody').html(html);
+            } else {
+                $('#todayLoginsBody').html('<tr><td colspan="4" class="text-danger">Error: ' + data.message + '</td></tr>');
+            }
+        },
+        error: function() {
+            $('#todayLoginsBody').html('<tr><td colspan="4" class="text-danger">Failed to load today\'s logins</td></tr>');
+        }
+    });
+}
+
+// Show all scans
+function showAllScans() {
+    $('#allScansModal').modal('show');
+    $.ajax({
+        url: '${docroot}/admin_get_all_scans',
+        type: 'POST',
+        dataType: 'json',
+        success: function(data) {
+            if (data.success) {
+                var html = '';
+                if (data.scans.length === 0) {
+                    html = '<tr><td colspan="7" class="text-center">No scans found</td></tr>';
+                } else {
+                    data.scans.forEach(function(scan) {
+                        var createdDate = new Date(scan.created * 1000).toLocaleString();
+                        var createdBy = scan.created_by || '<span class="text-muted">Unknown</span>';
+                        var accountType = scan.account_type === 'admin' ? 
+                            '<span class="label label-danger">Admin</span>' : 
+                            scan.account_type === 'user' ?
+                            '<span class="label label-primary">User</span>' :
+                            '<span class="label label-default">N/A</span>';
+                        
+                        var statusClass = '';
+                        if (scan.status === 'FINISHED') statusClass = 'label-success';
+                        else if (scan.status === 'RUNNING' || scan.status === 'STARTED') statusClass = 'label-info';
+                        else if (scan.status === 'ERROR-FAILED') statusClass = 'label-danger';
+                        else statusClass = 'label-default';
+                        
+                        html += '<tr>' +
+                            '<td>' + scan.name + '</td>' +
+                            '<td>' + scan.target + '</td>' +
+                            '<td>' + createdBy + '</td>' +
+                            '<td>' + accountType + '</td>' +
+                            '<td>' + createdDate + '</td>' +
+                            '<td><span class="label ' + statusClass + '">' + scan.status + '</span></td>' +
+                            '<td><a href="${docroot}/scaninfo?id=' + scan.guid + '" class="btn btn-xs btn-info" target="_blank"><i class="glyphicon glyphicon-eye-open"></i> View</a></td>' +
+                            '</tr>';
+                    });
+                }
+                $('#allScansBody').html(html);
+            } else {
+                $('#allScansBody').html('<tr><td colspan="7" class="text-danger">Error: ' + data.message + '</td></tr>');
+            }
+        },
+        error: function() {
+            $('#allScansBody').html('<tr><td colspan="7" class="text-danger">Failed to load scans</td></tr>');
+        }
+    });
+}
+
+// Show active scans
+function showActiveScans() {
+    $('#activeScansModal').modal('show');
+    $.ajax({
+        url: '${docroot}/admin_get_active_scans',
+        type: 'POST',
+        dataType: 'json',
+        success: function(data) {
+            if (data.success) {
+                var html = '';
+                if (data.scans.length === 0) {
+                    html = '<tr><td colspan="6" class="text-center">No active scans</td></tr>';
+                } else {
+                    data.scans.forEach(function(scan) {
+                        var startedDate = scan.started ? new Date(scan.started * 1000).toLocaleString() : 'Just started';
+                        var createdBy = scan.created_by || '<span class="text-muted">Unknown</span>';
+                        
+                        var statusClass = 'label-info';
+                        if (scan.status === 'STARTING') statusClass = 'label-warning';
+                        
+                        html += '<tr>' +
+                            '<td>' + scan.name + '</td>' +
+                            '<td>' + scan.target + '</td>' +
+                            '<td>' + createdBy + '</td>' +
+                            '<td>' + startedDate + '</td>' +
+                            '<td><span class="label ' + statusClass + '">' + scan.status + '</span></td>' +
+                            '<td><a href="${docroot}/scaninfo?id=' + scan.guid + '" class="btn btn-xs btn-info" target="_blank"><i class="glyphicon glyphicon-eye-open"></i> View</a></td>' +
+                            '</tr>';
+                    });
+                }
+                $('#activeScansBody').html(html);
+            } else {
+                $('#activeScansBody').html('<tr><td colspan="6" class="text-danger">Error: ' + data.message + '</td></tr>');
+            }
+        },
+        error: function() {
+            $('#activeScansBody').html('<tr><td colspan="6" class="text-danger">Failed to load active scans</td></tr>');
+        }
+    });
+}
+
+// Load recent activity
+function loadRecentActivity() {
+    $.ajax({
+        url: '${docroot}/admin_recent_activity',
+        type: 'POST',
+        dataType: 'json',
+        success: function(data) {
+            if (data.success && data.activities.length > 0) {
+                var html = '<ul class="list-unstyled">';
+                data.activities.forEach(function(activity) {
+                    var activityTime = new Date(activity.created_at * 1000);
+                    var timeAgo = getTimeAgo(activityTime);
+                    var icon = 'glyphicon-info-sign';
+                    
+                    if (activity.activity_type === 'login') icon = 'glyphicon-log-in';
+                    else if (activity.activity_type === 'scan_created') icon = 'glyphicon-plus';
+                    else if (activity.activity_type === 'page_access') icon = 'glyphicon-eye-open';
+                    
+                    html += '<li style="padding: 8px 0; border-bottom: 1px solid #eee;">' +
+                        '<i class="glyphicon ' + icon + '" style="color: #667eea; margin-right: 8px;"></i>' +
+                        '<span>' + activity.activity_description + '</span>' +
+                        '<br><small class="text-muted" style="margin-left: 24px;">' + timeAgo + '</small>' +
+                        '</li>';
+                });
+                html += '</ul>';
+                $('#recentActivity').html(html);
+            } else {
+                $('#recentActivity').html('<p class="text-muted">No recent activity</p>');
+            }
+        },
+        error: function() {
+            $('#recentActivity').html('<p class="text-danger">Failed to load activity</p>');
+        }
+    });
+}
+
+// Helper function to get time ago
+function getTimeAgo(date) {
+    var seconds = Math.floor((new Date() - date) / 1000);
+    var interval = Math.floor(seconds / 31536000);
+    
+    if (interval > 1) return interval + " years ago";
+    interval = Math.floor(seconds / 2592000);
+    if (interval > 1) return interval + " months ago";
+    interval = Math.floor(seconds / 86400);
+    if (interval > 1) return interval + " days ago";
+    interval = Math.floor(seconds / 3600);
+    if (interval > 1) return interval + " hours ago";
+    interval = Math.floor(seconds / 60);
+    if (interval > 1) return interval + " minutes ago";
+    return "Just now";
+}
+
+// Add hover effect to clickable stat boxes
+$(document).ready(function() {
+    // Add transition CSS
+    $('.stat-box.clickable').css({
+        'transition': 'all 0.3s ease',
+        '-webkit-transition': 'all 0.3s ease',
+        '-moz-transition': 'all 0.3s ease'
+    });
+    
+    $('.stat-box.clickable').hover(
+        function() {
+            $(this).css('transform', 'translateY(-5px)');
+            $(this).css('box-shadow', '0 5px 15px rgba(0,0,0,0.3)');
+        },
+        function() {
+            $(this).css('transform', 'translateY(0)');
+            $(this).css('box-shadow', '0 2px 5px rgba(0,0,0,0.1)');
+        }
+    );
+    
+    // Load recent activity on page load
+    loadRecentActivity();
+});
+</script>
 
 <script type='text/javascript' src="${docroot}/static/js/hawkeye.admin.js"></script>
 

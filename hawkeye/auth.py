@@ -119,9 +119,19 @@ class HawkEyeAuth:
             ip_address=ip_address
         )
         
+        # Log to system logs
+        self.db.logSystemEvent(
+            'INFO',
+            'AUTH',
+            f'User "{username}" logged in successfully',
+            user_id=user_info['id'],
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
         return True
     
-    def login_admin(self, username: str, password: str, ip_address: str = None, user_agent: str = None) -> bool:
+    def login_admin(self, username: str, password: str, ip_address: str = None, user_agent: str = None, verify_only: bool = False) -> bool:
         """Login an admin.
         
         Args:
@@ -129,6 +139,7 @@ class HawkEyeAuth:
             password (str): password
             ip_address (str): IP address
             user_agent (str): user agent
+            verify_only (bool): if True, only verify credentials without creating session
             
         Returns:
             bool: True if login successful
@@ -136,6 +147,10 @@ class HawkEyeAuth:
         admin_info = self.db.authenticateAdmin(username, password)
         if not admin_info:
             return False
+        
+        # If verify_only, just return True without creating session
+        if verify_only:
+            return True
             
         # Create session
         session_id = self.db.createSession(
@@ -148,6 +163,24 @@ class HawkEyeAuth:
         cherrypy.session['session_id'] = session_id
         cherrypy.session['user_type'] = 'admin'
         cherrypy.session['admin_id'] = admin_info['id']
+        
+        # Log admin activity
+        self.db.logUserActivity(
+            admin_id=admin_info['id'],
+            activity_type='login',
+            activity_description='Admin logged in',
+            ip_address=ip_address
+        )
+        
+        # Log to system logs
+        self.db.logSystemEvent(
+            'INFO',
+            'AUTH',
+            f'Admin "{username}" logged in successfully',
+            admin_id=admin_info['id'],
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
         
         return True
     

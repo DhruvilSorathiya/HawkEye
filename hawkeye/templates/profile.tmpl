@@ -1,0 +1,511 @@
+<%include file="HEADER.tmpl"/>
+
+<style>
+.profile-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 60px 0 40px 0;
+    margin: -20px -15px 30px -15px;
+    border-radius: 0 0 20px 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.profile-page-title {
+    position: absolute;
+    top: 70px;
+    left: 15px;
+    font-size: 28px;
+    font-weight: 600;
+    color: #333;
+    z-index: 1;
+}
+
+.profile-avatar {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    color: #667eea;
+    margin: 0 auto 20px;
+    border: 5px solid rgba(255,255,255,0.3);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.profile-name {
+    font-size: 32px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.profile-role {
+    font-size: 16px;
+    opacity: 0.9;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.info-card {
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    transition: all 0.3s ease;
+}
+
+.info-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    transform: translateY(-2px);
+}
+
+.info-card-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #333;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 10px;
+}
+
+.info-row {
+    display: flex;
+    padding: 12px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    font-weight: 600;
+    color: #666;
+    width: 150px;
+    flex-shrink: 0;
+}
+
+.info-value {
+    color: #333;
+    flex-grow: 1;
+}
+
+.stat-box-profile {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border-radius: 15px;
+    padding: 20px;
+    text-align: center;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.stat-number-profile {
+    font-size: 36px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.stat-label-profile {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+.activity-timeline {
+    position: relative;
+    padding-left: 30px;
+}
+
+.activity-item-timeline {
+    position: relative;
+    padding-bottom: 20px;
+}
+
+.activity-item-timeline:before {
+    content: '';
+    position: absolute;
+    left: -22px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #667eea;
+    border: 3px solid white;
+    box-shadow: 0 0 0 2px #667eea;
+}
+
+.activity-item-timeline:after {
+    content: '';
+    position: absolute;
+    left: -17px;
+    top: 17px;
+    width: 2px;
+    height: calc(100% - 12px);
+    background: #e0e0e0;
+}
+
+.activity-item-timeline:last-child:after {
+    display: none;
+}
+
+.activity-time-timeline {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 3px;
+}
+
+.activity-desc-timeline {
+    color: #333;
+    font-size: 14px;
+}
+
+.badge-custom {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 5px;
+    margin-bottom: 5px;
+}
+
+.badge-admin {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.badge-user {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+}
+
+.badge-active {
+    background: #4caf50;
+    color: white;
+}
+
+.edit-profile-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    padding: 10px 30px;
+    border-radius: 25px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.edit-profile-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    color: white;
+}
+</style>
+
+<div class="profile-header">
+    <div class="container">
+        <div class="profile-avatar">
+            <i class="glyphicon glyphicon-user"></i>
+        </div>
+        <div class="text-center">
+            <div class="profile-name">${profile_data['username']}</div>
+            <div class="profile-role">
+                % if profile_data['type'] == 'admin':
+                <span class="badge-custom badge-admin"><i class="glyphicon glyphicon-star"></i> Administrator</span>
+                % else:
+                <span class="badge-custom badge-user"><i class="glyphicon glyphicon-user"></i> User</span>
+                % endif
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Left Column -->
+    <div class="col-md-4">
+        <!-- Personal Information -->
+        <div class="info-card">
+            <div class="info-card-title">
+                <i class="glyphicon glyphicon-info-sign"></i> Personal Information
+            </div>
+            <div class="info-row">
+                <div class="info-label">Username:</div>
+                <div class="info-value">${profile_data['username']}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Email:</div>
+                <div class="info-value">${profile_data['email']}</div>
+            </div>
+            % if profile_data.get('mobile'):
+            <div class="info-row">
+                <div class="info-label">Mobile:</div>
+                <div class="info-value">${profile_data['mobile']}</div>
+            </div>
+            % endif
+            <div class="info-row">
+                <div class="info-label">Account Type:</div>
+                <div class="info-value">
+                    % if profile_data['type'] == 'admin':
+                    <span class="label label-danger">Administrator</span>
+                    % else:
+                    <span class="label label-primary">User</span>
+                    % endif
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Member Since:</div>
+                <div class="info-value">${profile_data['created_at_formatted']}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Last Login:</div>
+                <div class="info-value">${profile_data['last_login_formatted']}</div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="info-card">
+            <div class="info-card-title">
+                <i class="glyphicon glyphicon-flash"></i> Quick Actions
+            </div>
+            <button class="btn edit-profile-btn btn-block" onclick="showEditProfileModal()">
+                <i class="glyphicon glyphicon-edit"></i> Edit Profile
+            </button>
+            <button class="btn btn-warning btn-block" onclick="showChangePasswordModal()" style="margin-top: 10px;">
+                <i class="glyphicon glyphicon-lock"></i> Change Password
+            </button>
+            % if profile_data['type'] == 'admin':
+            <a href="${docroot}/admin" class="btn btn-info btn-block" style="margin-top: 10px;">
+                <i class="glyphicon glyphicon-cog"></i> Admin Dashboard
+            </a>
+            % endif
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="col-md-8">
+        <!-- Statistics -->
+        <div class="row">
+            <div class="col-md-4">
+                <div class="stat-box-profile">
+                    <div class="stat-number-profile">${stats['total_scans']}</div>
+                    <div class="stat-label-profile">Total Scans</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-box-profile" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <div class="stat-number-profile">${stats['active_scans']}</div>
+                    <div class="stat-label-profile">Active Scans</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="stat-box-profile" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                    <div class="stat-number-profile">${stats['total_activities']}</div>
+                    <div class="stat-label-profile">Activities</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="info-card">
+            <div class="info-card-title">
+                <i class="glyphicon glyphicon-time"></i> Recent Activity
+            </div>
+            <div class="activity-timeline">
+                % if activities:
+                    % for activity in activities[:10]:
+                    <div class="activity-item-timeline">
+                        <div class="activity-time-timeline">${activity['time_formatted']}</div>
+                        <div class="activity-desc-timeline">
+                            <strong>${activity['type']}:</strong> ${activity['description']}
+                        </div>
+                    </div>
+                    % endfor
+                % else:
+                <p class="text-muted">No recent activity</p>
+                % endif
+            </div>
+        </div>
+
+        <!-- Session Information -->
+        <div class="info-card">
+            <div class="info-card-title">
+                <i class="glyphicon glyphicon-globe"></i> Current Session
+            </div>
+            <div class="info-row">
+                <div class="info-label">IP Address:</div>
+                <div class="info-value">${session_info['ip_address']}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Browser:</div>
+                <div class="info-value">${session_info['user_agent']}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Session Started:</div>
+                <div class="info-value">${session_info['created_at_formatted']}</div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">Session Expires:</div>
+                <div class="info-value">${session_info['expires_at_formatted']}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Profile Modal -->
+<div class="modal fade" id="editProfileModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <button type="button" class="close" data-dismiss="modal" style="color: white;">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-edit"></i> Edit Profile</h4>
+            </div>
+            <div class="modal-body">
+                <form id="editProfileForm">
+                    <div class="form-group">
+                        <label for="editUsername">Username</label>
+                        <input type="text" class="form-control" id="editUsername" value="${profile_data['username']}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editEmail">Email Address</label>
+                        <input type="email" class="form-control" id="editEmail" value="${profile_data['email']}" required>
+                    </div>
+                    % if profile_data['type'] == 'user':
+                    <div class="form-group">
+                        <label for="editMobile">Mobile Number</label>
+                        <input type="text" class="form-control" id="editMobile" value="${profile_data.get('mobile', '')}">
+                    </div>
+                    % endif
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="updateProfile()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                <button type="button" class="close" data-dismiss="modal" style="color: white;">&times;</button>
+                <h4 class="modal-title"><i class="glyphicon glyphicon-lock"></i> Change Password</h4>
+            </div>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">Current Password</label>
+                        <input type="password" class="form-control" id="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <input type="password" class="form-control" id="newPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">Confirm New Password</label>
+                        <input type="password" class="form-control" id="confirmPassword" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="changePassword()">Change Password</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showEditProfileModal() {
+    $('#editProfileModal').modal('show');
+}
+
+function showChangePasswordModal() {
+    $('#changePasswordModal').modal('show');
+}
+
+function updateProfile() {
+    var username = $('#editUsername').val();
+    var email = $('#editEmail').val();
+    var mobile = $('#editMobile').val();
+    
+    if (!username || !email) {
+        alertify.error('Username and email are required');
+        return;
+    }
+    
+    $.ajax({
+        url: docroot + '/update_profile',
+        method: 'POST',
+        data: {
+            username: username,
+            email: email,
+            mobile: mobile
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                alertify.success('Profile updated successfully');
+                $('#editProfileModal').modal('hide');
+                setTimeout(function() {
+                    location.reload();
+                }, 1000);
+            } else {
+                alertify.error(response.message || 'Failed to update profile');
+            }
+        },
+        error: function() {
+            alertify.error('An error occurred while updating profile');
+        }
+    });
+}
+
+function changePassword() {
+    var currentPassword = $('#currentPassword').val();
+    var newPassword = $('#newPassword').val();
+    var confirmPassword = $('#confirmPassword').val();
+    
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        alertify.error('All fields are required');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        alertify.error('New passwords do not match');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        alertify.error('Password must be at least 6 characters long');
+        return;
+    }
+    
+    $.ajax({
+        url: docroot + '/change_password',
+        method: 'POST',
+        data: {
+            current_password: currentPassword,
+            new_password: newPassword
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                alertify.success('Password changed successfully');
+                $('#changePasswordModal').modal('hide');
+                $('#changePasswordForm')[0].reset();
+            } else {
+                alertify.error(response.message || 'Failed to change password');
+            }
+        },
+        error: function() {
+            alertify.error('An error occurred while changing password');
+        }
+    });
+}
+</script>
+
+<%include file="FOOTER.tmpl"/>

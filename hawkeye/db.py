@@ -44,7 +44,9 @@ class HawkEyeDb:
             created     INT DEFAULT 0, \
             started     INT DEFAULT 0, \
             ended       INT DEFAULT 0, \
-            status      VARCHAR NOT NULL \
+            status      VARCHAR NOT NULL, \
+            created_by_user_id INTEGER REFERENCES tbl_users(id), \
+            created_by_admin_id INTEGER REFERENCES tbl_admins(id) \
         )",
         "CREATE TABLE tbl_scan_log ( \
             scan_instance_id    VARCHAR NOT NULL REFERENCES tbl_scan_instance(guid), \
@@ -92,6 +94,8 @@ class HawkEyeDb:
         "CREATE INDEX idx_scan_results_module ON tbl_scan_results(scan_instance_id, module)",
         "CREATE INDEX idx_scan_results_srchash ON tbl_scan_results (scan_instance_id, source_event_hash)",
         "CREATE INDEX idx_scan_logs ON tbl_scan_log (scan_instance_id)",
+        "CREATE INDEX idx_scan_logs_type ON tbl_scan_log (scan_instance_id, type)",
+        "CREATE INDEX idx_scan_logs_generated ON tbl_scan_log (scan_instance_id, generated DESC)",
         "CREATE INDEX idx_scan_correlation ON tbl_scan_correlation_results (scan_instance_id, id)",
         "CREATE INDEX idx_scan_correlation_events ON tbl_scan_correlation_results_events (correlation_id)",
         "CREATE TABLE tbl_users ( \
@@ -139,7 +143,19 @@ class HawkEyeDb:
         "CREATE INDEX idx_user_sessions_user ON tbl_user_sessions (user_id)",
         "CREATE INDEX idx_user_sessions_admin ON tbl_user_sessions (admin_id)",
         "CREATE INDEX idx_user_activity_user ON tbl_user_activity (user_id)",
-        "CREATE INDEX idx_user_activity_admin ON tbl_user_activity (admin_id)"
+        "CREATE INDEX idx_user_activity_admin ON tbl_user_activity (admin_id)",
+        "CREATE TABLE tbl_password_reset_tokens ( \
+            id INTEGER PRIMARY KEY AUTOINCREMENT, \
+            user_id INTEGER REFERENCES tbl_users(id), \
+            admin_id INTEGER REFERENCES tbl_admins(id), \
+            token VARCHAR NOT NULL UNIQUE, \
+            created_at INT NOT NULL, \
+            expires_at INT NOT NULL, \
+            used INT NOT NULL DEFAULT 0 \
+        )",
+        "CREATE INDEX idx_password_reset_tokens_token ON tbl_password_reset_tokens (token)",
+        "CREATE INDEX idx_scan_instance_user ON tbl_scan_instance (created_by_user_id)",
+        "CREATE INDEX idx_scan_instance_admin ON tbl_scan_instance (created_by_admin_id)"
     ]
 
     eventDetails = [
@@ -429,6 +445,10 @@ class HawkEyeDb:
                 
                 # Create default admin account after tables are created
                 self.createDefaultAdmin()
+            
+            # Ensure new columns and tables exist (migration for existing databases)
+            self._ensure_scan_ownership_columns()
+            self._ensure_password_reset_table()
 
             if init:
                 for row in self.eventDetails:
@@ -694,13 +714,15 @@ class HawkEyeDb:
                 # log.critical(f"Unable to log event in DB due to lock: {e.args[0]}")
                 pass
 
-    def scanInstanceCreate(self, instanceId: str, scanName: str, scanTarget: str) -> None:
+    def scanInstanceCreate(self, instanceId: str, scanName: str, scanTarget: str, created_by_user_id: int = None, created_by_admin_id: int = None) -> None:
         """Store a scan instance in the database.
 
         Args:
             instanceId (str): scan instance ID
             scanName(str): scan name
             scanTarget (str): scan target
+            created_by_user_id (int): ID of user who created the scan
+            created_by_admin_id (int): ID of admin who created the scan
 
         Raises:
             TypeError: arg type was invalid
@@ -717,13 +739,13 @@ class HawkEyeDb:
             raise TypeError(f"scanTarget is {type(scanTarget)}; expected str()") from None
 
         qry = "INSERT INTO tbl_scan_instance \
-            (guid, name, seed_target, created, status) \
-            VALUES (?, ?, ?, ?, ?)"
+            (guid, name, seed_target, created, status, created_by_user_id, created_by_admin_id) \
+            VALUES (?, ?, ?, ?, ?, ?, ?)"
 
         with self.dbhLock:
             try:
                 self.dbh.execute(qry, (
-                    instanceId, scanName, scanTarget, time.time() * 1000, 'CREATED'
+                    instanceId, scanName, scanTarget, time.time() * 1000, 'CREATED', created_by_user_id, created_by_admin_id
                 ))
                 self.conn.commit()
             except sqlite3.Error as e:
@@ -1072,7 +1094,7 @@ class HawkEyeDb:
             except sqlite3.Error as e:
                 raise IOError("SQL error encountered when fetching unique result events") from e
 
-    def scanLogs(self, instanceId: str, limit: int = None, fromRowId: int = 0, reverse: bool = False) -> list:
+    def scanLogs(self, instanceId: str, limit: int = None, fromRowId: int = 0, reverse: bool = False, logType: str = None) -> list:
         """Get scan logs.
 
         Args:
@@ -1080,6 +1102,7 @@ class HawkEyeDb:
             limit (int): limit number of results
             fromRowId (int): retrieve logs starting from row ID
             reverse (bool): search result order
+            logType (str): filter by log type (INFO, WARNING, ERROR, DEBUG)
 
         Returns:
             list: scan logs
@@ -1094,18 +1117,21 @@ class HawkEyeDb:
 
         qry = "SELECT generated AS generated, component, \
             type, message, rowid FROM tbl_scan_log WHERE scan_instance_id = ?"
+        qvars = [instanceId]
+        
         if fromRowId:
             qry += " and rowid > ?"
+            qvars.append(str(fromRowId))
+        
+        if logType:
+            qry += " and type = ?"
+            qvars.append(logType)
 
         qry += " ORDER BY generated "
         if reverse:
             qry += "ASC"
         else:
             qry += "DESC"
-        qvars = [instanceId]
-
-        if fromRowId:
-            qvars.append(str(fromRowId))
 
         if limit is not None:
             qry += " LIMIT ?"
@@ -1491,8 +1517,13 @@ class HawkEyeDb:
             except sqlite3.Error as e:
                 raise IOError(f"SQL error encountered when storing event data ({self.dbh})") from e
 
-    def scanInstanceList(self) -> list:
+    def scanInstanceList(self, user_id: int = None, admin_id: int = None, is_admin_panel: bool = False) -> list:
         """List all previously run scans.
+
+        Args:
+            user_id (int): Filter by user ID (optional)
+            admin_id (int): Filter by admin ID (optional)
+            is_admin_panel (bool): If True, show all scans for admin panel
 
         Returns:
             list: previously run scans
@@ -1504,20 +1535,40 @@ class HawkEyeDb:
         # SQLite doesn't support OUTER JOINs, so we need a work-around that
         # does a UNION of scans with results and scans without results to
         # get a complete listing.
-        qry = "SELECT i.guid, i.name, i.seed_target, ROUND(i.created/1000), \
+        
+        # Build filter condition
+        filter_condition = ""
+        params = []
+        
+        if is_admin_panel:
+            # Admin panel shows all scans
+            filter_condition = ""
+        elif user_id is not None:
+            filter_condition = "AND i.created_by_user_id = ?"
+            params.append(user_id)
+        elif admin_id is not None:
+            filter_condition = "AND i.created_by_admin_id = ?"
+            params.append(admin_id)
+        
+        qry = f"SELECT i.guid, i.name, i.seed_target, ROUND(i.created/1000), \
             ROUND(i.started)/1000 as started, ROUND(i.ended)/1000, i.status, COUNT(r.type) \
             FROM tbl_scan_instance i, tbl_scan_results r WHERE i.guid = r.scan_instance_id \
-            AND r.type <> 'ROOT' GROUP BY i.guid \
+            AND r.type <> 'ROOT' {filter_condition} GROUP BY i.guid \
             UNION ALL \
             SELECT i.guid, i.name, i.seed_target, ROUND(i.created/1000), \
             ROUND(i.started)/1000 as started, ROUND(i.ended)/1000, i.status, '0' \
             FROM tbl_scan_instance i  WHERE i.guid NOT IN ( \
             SELECT distinct scan_instance_id FROM tbl_scan_results WHERE type <> 'ROOT') \
+            {filter_condition} \
             ORDER BY started DESC"
 
         with self.dbhLock:
             try:
-                self.dbh.execute(qry)
+                if params:
+                    # Need to pass params twice for both parts of UNION
+                    self.dbh.execute(qry, params + params)
+                else:
+                    self.dbh.execute(qry)
                 return self.dbh.fetchall()
             except sqlite3.Error as e:
                 raise IOError("SQL error encountered when fetching scan list") from e
@@ -1994,13 +2045,14 @@ class HawkEyeDb:
             except sqlite3.Error as e:
                 raise IOError("SQL error encountered when creating user") from e
 
-    def createAdmin(self, username: str, password: str, email: str, created_by_admin_id: int) -> bool:
+    def createAdmin(self, username: str, password: str, email: str, mobile: str = None, created_by_admin_id: int = None) -> bool:
         """Create a new admin.
         
         Args:
             username (str): username
             password (str): password
             email (str): email
+            mobile (str): mobile number (optional)
             created_by_admin_id (int): admin who created this admin
             
         Returns:
@@ -2015,8 +2067,6 @@ class HawkEyeDb:
         with self.dbhLock:
             try:
                 qry = "INSERT INTO tbl_admins (username, password_hash, email, mobile, created_at, created_by_admin_id) VALUES (?, ?, ?, ?, ?, ?)"
-                # Accept optional mobile via context variable if present
-                mobile = locals().get('mobile') if 'mobile' in locals() else None
                 self.dbh.execute(qry, (username, password_hash, email, mobile, int(time.time()), created_by_admin_id))
                 self.conn.commit()
                 return True
@@ -2035,6 +2085,169 @@ class HawkEyeDb:
                 return self.dbh.fetchall()
             except sqlite3.Error as e:
                 raise IOError("SQL error encountered when fetching users") from e
+
+    def getAllAdmins(self) -> list:
+        """Get all admins.
+        
+        Returns:
+            list: list of admins
+        """
+        with self.dbhLock:
+            try:
+                self.dbh.execute("SELECT id, username, email, mobile, created_at, last_login, is_active FROM tbl_admins ORDER BY created_at DESC")
+                return self.dbh.fetchall()
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when fetching admins") from e
+
+    def getTodayLogins(self) -> int:
+        """Get count of logins today.
+        
+        Returns:
+            int: number of logins today
+        """
+        from datetime import datetime
+        
+        # Get start of today (midnight)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = int(today.timestamp())
+        
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    SELECT COUNT(*) FROM tbl_user_activity 
+                    WHERE activity_type = 'login' 
+                    AND created_at >= ?
+                """, (today_start,))
+                result = self.dbh.fetchone()
+                return int(result[0]) if result else 0
+            except sqlite3.Error:
+                return 0
+
+    def getAllScansWithOwners(self) -> list:
+        """Get all scans with owner information.
+        
+        Returns:
+            list: list of scans with owner details
+        """
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    SELECT 
+                        si.guid,
+                        si.name,
+                        si.seed_target,
+                        si.created,
+                        si.status,
+                        u.username as user_name,
+                        a.username as admin_name,
+                        CASE 
+                            WHEN si.created_by_user_id IS NOT NULL THEN 'user'
+                            WHEN si.created_by_admin_id IS NOT NULL THEN 'admin'
+                            ELSE NULL
+                        END as account_type
+                    FROM tbl_scan_instance si
+                    LEFT JOIN tbl_users u ON si.created_by_user_id = u.id
+                    LEFT JOIN tbl_admins a ON si.created_by_admin_id = a.id
+                    ORDER BY si.created DESC
+                """)
+                results = self.dbh.fetchall()
+                
+                scans = []
+                for row in results:
+                    scans.append({
+                        'guid': row[0],
+                        'name': row[1],
+                        'target': row[2],
+                        'created': row[3] / 1000 if row[3] else 0,  # Convert to seconds
+                        'status': row[4],
+                        'created_by': row[5] or row[6] or 'Unknown',
+                        'account_type': row[7]
+                    })
+                
+                return scans
+            except sqlite3.Error as e:
+                print(f"Error fetching scans with owners: {e}")
+                return []
+
+    def getActiveScansWithOwners(self) -> list:
+        """Get active/running scans with owner information.
+        
+        Returns:
+            list: list of active scans with owner details
+        """
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    SELECT 
+                        si.guid,
+                        si.name,
+                        si.seed_target,
+                        si.started,
+                        si.status,
+                        u.username as user_name,
+                        a.username as admin_name
+                    FROM tbl_scan_instance si
+                    LEFT JOIN tbl_users u ON si.created_by_user_id = u.id
+                    LEFT JOIN tbl_admins a ON si.created_by_admin_id = a.id
+                    WHERE si.status IN ('RUNNING', 'STARTING', 'STARTED')
+                    ORDER BY si.started DESC
+                """)
+                results = self.dbh.fetchall()
+                
+                scans = []
+                for row in results:
+                    scans.append({
+                        'guid': row[0],
+                        'name': row[1],
+                        'target': row[2],
+                        'started': row[3] / 1000 if row[3] else 0,  # Convert to seconds
+                        'status': row[4],
+                        'created_by': row[5] or row[6] or 'Unknown'
+                    })
+                
+                return scans
+            except sqlite3.Error as e:
+                print(f"Error fetching active scans: {e}")
+                return []
+
+    def getTodayLoginDetails(self) -> list:
+        """Get detailed login information for today.
+        
+        Returns:
+            list: list of login details (username, time, ip_address)
+        """
+        from datetime import datetime
+        
+        # Get start of today (midnight)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = int(today.timestamp())
+        
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    SELECT username, created_at, ip_address, account_type
+                    FROM (
+                        SELECT u.username, ua.created_at, ua.ip_address, 'user' as account_type
+                        FROM tbl_user_activity ua
+                        JOIN tbl_users u ON ua.user_id = u.id
+                        WHERE ua.activity_type = 'login' 
+                        AND ua.created_at >= ?
+                        AND ua.user_id IS NOT NULL
+                        UNION ALL
+                        SELECT a.username, ua.created_at, ua.ip_address, 'admin' as account_type
+                        FROM tbl_user_activity ua
+                        JOIN tbl_admins a ON ua.admin_id = a.id
+                        WHERE ua.activity_type = 'login' 
+                        AND ua.created_at >= ?
+                        AND ua.admin_id IS NOT NULL
+                    )
+                    ORDER BY created_at DESC
+                """, (today_start, today_start))
+                return self.dbh.fetchall()
+            except sqlite3.Error as e:
+                # Log the error for debugging
+                print(f"Error fetching today's logins: {e}")
+                return []
 
     def getAdminCount(self) -> int:
         """Get number of admin accounts.
@@ -2063,6 +2276,56 @@ class HawkEyeDb:
             except sqlite3.Error:
                 pass
 
+    def _ensure_scan_ownership_columns(self) -> None:
+        """Add ownership columns to tbl_scan_instance if missing."""
+        with self.dbhLock:
+            try:
+                self.dbh.execute("PRAGMA table_info(tbl_scan_instance)")
+                cols = [r[1] for r in self.dbh.fetchall()]
+                
+                if 'created_by_user_id' not in cols:
+                    self.dbh.execute("ALTER TABLE tbl_scan_instance ADD COLUMN created_by_user_id INTEGER REFERENCES tbl_users(id)")
+                    self.conn.commit()
+                
+                if 'created_by_admin_id' not in cols:
+                    self.dbh.execute("ALTER TABLE tbl_scan_instance ADD COLUMN created_by_admin_id INTEGER REFERENCES tbl_admins(id)")
+                    self.conn.commit()
+                
+                # Create indexes if they don't exist
+                try:
+                    self.dbh.execute("CREATE INDEX IF NOT EXISTS idx_scan_instance_user ON tbl_scan_instance (created_by_user_id)")
+                    self.dbh.execute("CREATE INDEX IF NOT EXISTS idx_scan_instance_admin ON tbl_scan_instance (created_by_admin_id)")
+                    self.conn.commit()
+                except sqlite3.Error:
+                    pass
+                    
+            except sqlite3.Error:
+                pass
+
+    def _ensure_password_reset_table(self) -> None:
+        """Create password reset tokens table if missing."""
+        with self.dbhLock:
+            try:
+                # Check if table exists
+                self.dbh.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tbl_password_reset_tokens'")
+                if not self.dbh.fetchone():
+                    # Create table
+                    self.dbh.execute("""
+                        CREATE TABLE tbl_password_reset_tokens (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER REFERENCES tbl_users(id),
+                            admin_id INTEGER REFERENCES tbl_admins(id),
+                            token VARCHAR NOT NULL UNIQUE,
+                            created_at INT NOT NULL,
+                            expires_at INT NOT NULL,
+                            used INT NOT NULL DEFAULT 0
+                        )
+                    """)
+                    self.dbh.execute("CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON tbl_password_reset_tokens (token)")
+                    self.conn.commit()
+            except sqlite3.Error:
+                pass
+
     def getUserActivity(self, user_id: int) -> list:
         """Get user activity.
         
@@ -2084,11 +2347,12 @@ class HawkEyeDb:
             except sqlite3.Error as e:
                 raise IOError("SQL error encountered when fetching user activity") from e
 
-    def logUserActivity(self, user_id: int, activity_type: str, activity_description: str, scan_id: str = None, ip_address: str = None) -> None:
+    def logUserActivity(self, user_id: int = None, admin_id: int = None, activity_type: str = '', activity_description: str = '', scan_id: str = None, ip_address: str = None) -> None:
         """Log user activity.
         
         Args:
-            user_id (int): user ID
+            user_id (int): user ID (optional)
+            admin_id (int): admin ID (optional)
             activity_type (str): type of activity
             activity_description (str): description of activity
             scan_id (str): scan ID if applicable
@@ -2096,8 +2360,8 @@ class HawkEyeDb:
         """
         with self.dbhLock:
             try:
-                qry = "INSERT INTO tbl_user_activity (user_id, activity_type, activity_description, scan_id, created_at, ip_address) VALUES (?, ?, ?, ?, ?, ?)"
-                self.dbh.execute(qry, (user_id, activity_type, activity_description, scan_id, int(time.time()), ip_address))
+                qry = "INSERT INTO tbl_user_activity (user_id, admin_id, activity_type, activity_description, scan_id, created_at, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                self.dbh.execute(qry, (user_id, admin_id, activity_type, activity_description, scan_id, int(time.time()), ip_address))
                 self.conn.commit()
             except sqlite3.Error as e:
                 raise IOError("SQL error encountered when logging user activity") from e
@@ -2175,3 +2439,434 @@ class HawkEyeDb:
                 return True
             except sqlite3.Error as e:
                 raise IOError("SQL error encountered when deleting session") from e
+
+    def createPasswordResetToken(self, user_id: int = None, admin_id: int = None) -> str:
+        """Create a password reset token.
+        
+        Args:
+            user_id (int): user ID
+            admin_id (int): admin ID
+            
+        Returns:
+            str: reset token
+        """
+        import secrets
+        
+        token = secrets.token_urlsafe(32)
+        expires_at = int(time.time()) + (60 * 60)  # 1 hour
+        
+        with self.dbhLock:
+            try:
+                qry = "INSERT INTO tbl_password_reset_tokens (user_id, admin_id, token, created_at, expires_at, used) VALUES (?, ?, ?, ?, ?, ?)"
+                self.dbh.execute(qry, (user_id, admin_id, token, int(time.time()), expires_at, 0))
+                self.conn.commit()
+                return token
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when creating password reset token") from e
+
+    def getPasswordResetToken(self, token: str) -> dict:
+        """Get password reset token information.
+        
+        Args:
+            token (str): reset token
+            
+        Returns:
+            dict: token info if valid, None otherwise
+        """
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    SELECT id, user_id, admin_id, token, created_at, expires_at, used 
+                    FROM tbl_password_reset_tokens 
+                    WHERE token = ? AND expires_at > ? AND used = 0
+                """, (token, int(time.time())))
+                result = self.dbh.fetchone()
+                if result:
+                    return {
+                        'id': result[0],
+                        'user_id': result[1],
+                        'admin_id': result[2],
+                        'token': result[3],
+                        'created_at': result[4],
+                        'expires_at': result[5],
+                        'used': result[6]
+                    }
+                return None
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when fetching password reset token") from e
+
+    def markPasswordResetTokenUsed(self, token: str) -> bool:
+        """Mark a password reset token as used.
+        
+        Args:
+            token (str): reset token
+            
+        Returns:
+            bool: success
+        """
+        with self.dbhLock:
+            try:
+                self.dbh.execute("UPDATE tbl_password_reset_tokens SET used = 1 WHERE token = ?", (token,))
+                self.conn.commit()
+                return True
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when marking token as used") from e
+
+    def resetUserPassword(self, user_id: int, new_password: str) -> bool:
+        """Reset a user's password.
+        
+        Args:
+            user_id (int): user ID
+            new_password (str): new password
+            
+        Returns:
+            bool: success
+        """
+        password_hash = hashlib.sha256(new_password.encode('utf-8')).hexdigest()
+        
+        with self.dbhLock:
+            try:
+                self.dbh.execute("UPDATE tbl_users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+                self.conn.commit()
+                return True
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when resetting user password") from e
+
+    def resetAdminPassword(self, admin_id: int, new_password: str) -> bool:
+        """Reset an admin's password.
+        
+        Args:
+            admin_id (int): admin ID
+            new_password (str): new password
+            
+        Returns:
+            bool: success
+        """
+        password_hash = hashlib.sha256(new_password.encode('utf-8')).hexdigest()
+        
+        with self.dbhLock:
+            try:
+                self.dbh.execute("UPDATE tbl_admins SET password_hash = ? WHERE id = ?", (password_hash, admin_id))
+                self.conn.commit()
+                return True
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when resetting admin password") from e
+
+    def getUserByEmail(self, email: str) -> dict:
+        """Get user by email.
+        
+        Args:
+            email (str): email address
+            
+        Returns:
+            dict: user info if found, None otherwise
+        """
+        with self.dbhLock:
+            try:
+                self.dbh.execute("SELECT id, username, email FROM tbl_users WHERE email = ?", (email,))
+                result = self.dbh.fetchone()
+                if result:
+                    return {
+                        'id': result[0],
+                        'username': result[1],
+                        'email': result[2]
+                    }
+                return None
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when fetching user by email") from e
+
+    def getAdminByEmail(self, email: str) -> dict:
+        """Get admin by email.
+        
+        Args:
+            email (str): email address
+            
+        Returns:
+            dict: admin info if found, None otherwise
+        """
+        with self.dbhLock:
+            try:
+                self.dbh.execute("SELECT id, username, email FROM tbl_admins WHERE email = ?", (email,))
+                result = self.dbh.fetchone()
+                if result:
+                    return {
+                        'id': result[0],
+                        'username': result[1],
+                        'email': result[2]
+                    }
+                return None
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when fetching admin by email") from e
+
+    def ensureSystemTablesExist(self) -> None:
+        """Ensure system settings and logs tables exist."""
+        with self.dbhLock:
+            try:
+                # Check if system settings table exists
+                self.dbh.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tbl_system_settings'")
+                if not self.dbh.fetchone():
+                    self.dbh.execute("""
+                        CREATE TABLE tbl_system_settings (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            setting_key VARCHAR NOT NULL UNIQUE,
+                            setting_value VARCHAR NOT NULL,
+                            setting_type VARCHAR NOT NULL,
+                            description VARCHAR,
+                            updated_at INT NOT NULL,
+                            updated_by_admin_id INTEGER REFERENCES tbl_admins(id)
+                        )
+                    """)
+                    self.dbh.execute("CREATE INDEX idx_system_settings_key ON tbl_system_settings (setting_key)")
+                    
+                    # Insert default settings
+                    default_settings = [
+                        ('max_scan_threads', '10', 'integer', 'Maximum number of concurrent scan threads', int(time.time()), None),
+                        ('session_timeout', '3600', 'integer', 'Session timeout in seconds', int(time.time()), None),
+                        ('enable_email_notifications', 'false', 'boolean', 'Enable email notifications', int(time.time()), None),
+                        ('max_login_attempts', '5', 'integer', 'Maximum login attempts before lockout', int(time.time()), None),
+                        ('scan_result_retention_days', '90', 'integer', 'Days to retain scan results', int(time.time()), None),
+                        ('enable_auto_backup', 'true', 'boolean', 'Enable automatic database backups', int(time.time()), None),
+                        ('backup_interval_hours', '24', 'integer', 'Backup interval in hours', int(time.time()), None),
+                        ('max_concurrent_scans', '5', 'integer', 'Maximum concurrent scans allowed', int(time.time()), None),
+                        ('enable_rate_limiting', 'true', 'boolean', 'Enable API rate limiting', int(time.time()), None),
+                        ('log_retention_days', '30', 'integer', 'Days to retain system logs', int(time.time()), None)
+                    ]
+                    self.dbh.executemany("""
+                        INSERT INTO tbl_system_settings (setting_key, setting_value, setting_type, description, updated_at, updated_by_admin_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, default_settings)
+                
+                # Check if system logs table exists
+                self.dbh.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tbl_system_logs'")
+                if not self.dbh.fetchone():
+                    self.dbh.execute("""
+                        CREATE TABLE tbl_system_logs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            log_level VARCHAR NOT NULL,
+                            log_category VARCHAR NOT NULL,
+                            log_message VARCHAR NOT NULL,
+                            user_id INTEGER REFERENCES tbl_users(id),
+                            admin_id INTEGER REFERENCES tbl_admins(id),
+                            ip_address VARCHAR,
+                            user_agent VARCHAR,
+                            additional_data VARCHAR,
+                            created_at INT NOT NULL
+                        )
+                    """)
+                    self.dbh.execute("CREATE INDEX idx_system_logs_created ON tbl_system_logs (created_at DESC)")
+                    self.dbh.execute("CREATE INDEX idx_system_logs_level ON tbl_system_logs (log_level)")
+                    self.dbh.execute("CREATE INDEX idx_system_logs_category ON tbl_system_logs (log_category)")
+                
+                self.conn.commit()
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when creating system tables") from e
+
+    def getSystemSettings(self) -> list:
+        """Get all system settings.
+        
+        Returns:
+            list: list of system settings
+        """
+        self.ensureSystemTablesExist()
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    SELECT id, setting_key, setting_value, setting_type, description, updated_at, updated_by_admin_id
+                    FROM tbl_system_settings
+                    ORDER BY setting_key
+                """)
+                return self.dbh.fetchall()
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when fetching system settings") from e
+
+    def updateSystemSetting(self, setting_key: str, setting_value: str, admin_id: int) -> bool:
+        """Update a system setting.
+        
+        Args:
+            setting_key (str): setting key
+            setting_value (str): new value
+            admin_id (int): admin ID making the change
+            
+        Returns:
+            bool: True if successful
+        """
+        self.ensureSystemTablesExist()
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    UPDATE tbl_system_settings
+                    SET setting_value = ?, updated_at = ?, updated_by_admin_id = ?
+                    WHERE setting_key = ?
+                """, (setting_value, int(time.time()), admin_id, setting_key))
+                self.conn.commit()
+                
+                # Log the change
+                self.logSystemEvent('INFO', 'SYSTEM_SETTINGS', 
+                                  f'Setting "{setting_key}" updated to "{setting_value}"',
+                                  admin_id=admin_id)
+                return True
+            except sqlite3.Error as e:
+                raise IOError("SQL error encountered when updating system setting") from e
+
+    def logSystemEvent(self, log_level: str, log_category: str, log_message: str, 
+                      user_id: int = None, admin_id: int = None, ip_address: str = None,
+                      user_agent: str = None, additional_data: str = None) -> None:
+        """Log a system event.
+        
+        Args:
+            log_level (str): log level (INFO, WARNING, ERROR, CRITICAL)
+            log_category (str): category (AUTH, SCAN, SYSTEM_SETTINGS, etc.)
+            log_message (str): log message
+            user_id (int): user ID if applicable
+            admin_id (int): admin ID if applicable
+            ip_address (str): IP address
+            user_agent (str): user agent
+            additional_data (str): additional JSON data
+        """
+        self.ensureSystemTablesExist()
+        with self.dbhLock:
+            try:
+                self.dbh.execute("""
+                    INSERT INTO tbl_system_logs 
+                    (log_level, log_category, log_message, user_id, admin_id, ip_address, user_agent, additional_data, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (log_level, log_category, log_message, user_id, admin_id, ip_address, user_agent, additional_data, int(time.time())))
+                self.conn.commit()
+            except sqlite3.Error as e:
+                # Don't raise exception for logging errors to prevent cascading failures
+                print(f"Error logging system event: {e}")
+
+    def getSystemLogs(self, limit: int = 100, offset: int = 0, log_level: str = None, 
+                     log_category: str = None, start_date: int = None, end_date: int = None) -> dict:
+        """Get system logs with filtering.
+        
+        Args:
+            limit (int): number of logs to return
+            offset (int): offset for pagination
+            log_level (str): filter by log level
+            log_category (str): filter by category
+            start_date (int): start timestamp
+            end_date (int): end timestamp
+            
+        Returns:
+            dict: logs and total count
+        """
+        self.ensureSystemTablesExist()
+        with self.dbhLock:
+            try:
+                # Build query with filters
+                query = """
+                    SELECT sl.id, sl.log_level, sl.log_category, sl.log_message, 
+                           sl.user_id, sl.admin_id, sl.ip_address, sl.user_agent, 
+                           sl.additional_data, sl.created_at,
+                           u.username as user_username, a.username as admin_username
+                    FROM tbl_system_logs sl
+                    LEFT JOIN tbl_users u ON sl.user_id = u.id
+                    LEFT JOIN tbl_admins a ON sl.admin_id = a.id
+                    WHERE 1=1
+                """
+                params = []
+                
+                if log_level:
+                    query += " AND sl.log_level = ?"
+                    params.append(log_level)
+                
+                if log_category:
+                    query += " AND sl.log_category = ?"
+                    params.append(log_category)
+                
+                if start_date:
+                    query += " AND sl.created_at >= ?"
+                    params.append(start_date)
+                
+                if end_date:
+                    query += " AND sl.created_at <= ?"
+                    params.append(end_date)
+                
+                # Get total count
+                count_query = query.replace("SELECT sl.id, sl.log_level, sl.log_category, sl.log_message, sl.user_id, sl.admin_id, sl.ip_address, sl.user_agent, sl.additional_data, sl.created_at, u.username as user_username, a.username as admin_username", "SELECT COUNT(*)")
+                self.dbh.execute(count_query, params)
+                count_result = self.dbh.fetchone()
+                total_count = count_result[0] if count_result else 0
+                
+                # Get logs
+                query += " ORDER BY sl.created_at DESC LIMIT ? OFFSET ?"
+                params.extend([limit, offset])
+                
+                self.dbh.execute(query, params)
+                logs = self.dbh.fetchall()
+                
+                # If no logs exist, add some sample logs for demonstration
+                if total_count == 0:
+                    self._addSampleLogs()
+                    # Re-fetch after adding samples
+                    self.dbh.execute(query, params)
+                    logs = self.dbh.fetchall()
+                    self.dbh.execute(count_query, params[:len(params)-2])  # Exclude limit/offset
+                    count_result = self.dbh.fetchone()
+                    total_count = count_result[0] if count_result else 0
+                
+                return {
+                    'logs': logs if logs else [],
+                    'total': total_count
+                }
+            except sqlite3.Error as e:
+                print(f"SQL error in getSystemLogs: {e}")
+                return {
+                    'logs': [],
+                    'total': 0
+                }
+    
+    def _addSampleLogs(self) -> None:
+        """Add sample logs for demonstration purposes."""
+        try:
+            sample_logs = [
+                ('INFO', 'SYSTEM', 'System initialized successfully', None, None, None, None, None, int(time.time()) - 3600),
+                ('INFO', 'DATABASE', 'Database tables created', None, None, None, None, None, int(time.time()) - 3500),
+                ('INFO', 'SYSTEM_SETTINGS', 'System settings initialized with default values', None, None, None, None, None, int(time.time()) - 3400),
+                ('INFO', 'SYSTEM', 'System logs feature activated', None, None, None, None, None, int(time.time()) - 3300),
+                ('WARNING', 'SYSTEM', 'No logs found - sample logs generated', None, None, None, None, None, int(time.time())),
+            ]
+            
+            for log in sample_logs:
+                self.dbh.execute("""
+                    INSERT INTO tbl_system_logs 
+                    (log_level, log_category, log_message, user_id, admin_id, ip_address, user_agent, additional_data, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, log)
+            
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error adding sample logs: {e}")
+
+    def getSystemStats(self) -> dict:
+        """Get system statistics for dashboard.
+        
+        Returns:
+            dict: system statistics
+        """
+        self.ensureSystemTablesExist()
+        with self.dbhLock:
+            try:
+                stats = {}
+                
+                # Get log counts by level
+                self.dbh.execute("""
+                    SELECT log_level, COUNT(*) 
+                    FROM tbl_system_logs 
+                    WHERE created_at >= ?
+                    GROUP BY log_level
+                """, (int(time.time()) - 86400,))  # Last 24 hours
+                stats['logs_24h'] = dict(self.dbh.fetchall())
+                
+                # Get total logs
+                self.dbh.execute("SELECT COUNT(*) FROM tbl_system_logs")
+                stats['total_logs'] = self.dbh.fetchone()[0]
+                
+                # Get database size
+                self.dbh.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")
+                stats['db_size'] = self.dbh.fetchone()[0]
+                
+                return stats
+            except sqlite3.Error as e:
+                return {}

@@ -1,15 +1,3 @@
-# -*- coding: utf-8 -*-
-# -------------------------------------------------------------------------------
-# Name:        hep_viewdns
-# Purpose:     Reverse Whois lookups using ViewDNS.info API.
-#
-# Author:      Steve Micallef
-#
-# Created:     08/09/2018
-# Copyright:   (c) Steve Micallef 2018
-# Licence:     MIT
-# -------------------------------------------------------------------------------
-
 import json
 import urllib.error
 import urllib.parse

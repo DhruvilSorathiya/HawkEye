@@ -8,7 +8,7 @@
     <meta name="author" content="">
     <link rel="icon" type="image/png" href="${docroot}/static/img/hawkeye-icon.png">
 
-    <script type='text/javascript' src='${docroot}/static/js/hawkeye.js'></script>
+    <script type='text/javascript' src='${docroot}/static/js/HawkEye.js'></script>
     <script type='text/javascript' src='${docroot}/static/js/viz.js'></script>
 
     <link href="${docroot}/static/css/hawkeye.css" rel="stylesheet">
@@ -69,7 +69,12 @@ class="nav-item"
 % if pageid == "SETTINGS":
     class="active"
 %endif
-class="nav-item"><a id="nav-link-settings" href="${docroot}/opts" class="nav-link"><i class="glyphicon glyphicon-wrench"></i>&nbsp;Settings</a></li> 
+class="nav-item"><a id="nav-link-settings" href="${docroot}/opts" class="nav-link"><i class="glyphicon glyphicon-wrench"></i>&nbsp;Settings</a></li>
+        <li
+% if pageid == "MODULEINFO":
+    class="active"
+%endif
+class="nav-item"><a id="nav-link-moduleinfo" href="${docroot}/moduleinfo" class="nav-link"><i class="glyphicon glyphicon-info-sign"></i>&nbsp;Module Info</a></li>
       </ul>
       
       <ul class="nav navbar-nav navbar-right">
@@ -90,7 +95,7 @@ class="nav-item"><a id="nav-link-settings" href="${docroot}/opts" class="nav-lin
             <i class="glyphicon glyphicon-user"></i>&nbsp;${user_info['username']} <span class="caret"></span>
           </a>
           <ul class="dropdown-menu">
-            <li><a href="#"><i class="glyphicon glyphicon-user"></i>&nbsp;Profile</a></li>
+            <li><a href="${docroot}/profile"><i class="glyphicon glyphicon-user"></i>&nbsp;Profile</a></li>
             % if user_info['type'] == 'admin':
             <li><a href="${docroot}/admin"><i class="glyphicon glyphicon-cog"></i>&nbsp;Admin Panel</a></li>
             % endif

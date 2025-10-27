@@ -38,7 +38,7 @@ class HawkEyeScanner():
     __modconfig = dict()
     __scanName = None
 
-    def __init__(self, scanName: str, scanId: str, targetValue: str, targetType: str, moduleList: list, globalOpts: dict, start: bool = True) -> None:
+    def __init__(self, scanName: str, scanId: str, targetValue: str, targetType: str, moduleList: list, globalOpts: dict, start: bool = True, created_by_user_id: int = None, created_by_admin_id: int = None) -> None:
         """Initialize HawkEyeScanner object.
 
         Args:
@@ -49,6 +49,8 @@ class HawkEyeScanner():
             moduleList (list): list of modules to run
             globalOpts (dict): scan options
             start (bool): start the scan immediately
+            created_by_user_id (int): ID of user who created the scan
+            created_by_admin_id (int): ID of admin who created the scan
 
         Raises:
             TypeError: arg type was invalid
@@ -107,7 +109,7 @@ class HawkEyeScanner():
             self.__scanId = HawkEyeHelpers.genScanInstanceId()
 
         self.__he.scanId = self.__scanId
-        self.__dbh.scanInstanceCreate(self.__scanId, self.__scanName, self.__targetValue)
+        self.__dbh.scanInstanceCreate(self.__scanId, self.__scanName, self.__targetValue, created_by_user_id, created_by_admin_id)
 
         # Create our target
         try:

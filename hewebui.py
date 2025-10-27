@@ -32,12 +32,15 @@ from hawkeye.logger import logListenerSetup, logWorkerSetup
 from hawkeye.auth import HawkEyeAuth
 
 mp.set_start_method("spawn", force=True)
-
+print("Looking for template in:", os.path.abspath('hawkeye/templates/admin_dashboard.tmpl'))
+print("Exists:", os.path.isfile('hawkeye/templates/admin_dashboard.tmpl'))
 
 class HawkEyeWebUi:
     """HawkEye web interface."""
 
-    lookup = TemplateLookup(directories=[os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hawkeye', 'templates')])
+    lookup = TemplateLookup(
+        directories=[os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hawkeye', 'templates')]
+    )
     defaultConfig = dict()
     config = dict()
     token = None
@@ -95,12 +98,12 @@ class HawkEyeWebUi:
         csp = (
             secure.ContentSecurityPolicy()
             .default_src("'self'")
-            .script_src("'self'", "'unsafe-inline'", "blob:")
-            .style_src("'self'", "'unsafe-inline'")
+            .script_src("'self'", "'unsafe-inline'", "blob:", "https://unpkg.com")
+            .style_src("'self'", "'unsafe-inline'", "https://unpkg.com")
             .base_uri("'self'")
-            .connect_src("'self'", "data:")
+            .connect_src("'self'", "data:", "https://*.tile.openstreetmap.org")
             .frame_src("'self'", 'data:')
-            .img_src("'self'", "data:")
+            .img_src("'self'", "data:", "https://*.tile.openstreetmap.org")
         )
 
         secure_headers = secure.Secure(
@@ -150,7 +153,7 @@ class HawkEyeWebUi:
         Returns:
             str: HTTP response template
         """
-        templ = Template(filename='error.tmpl', lookup=self.lookup)
+        templ = self.lookup.get_template('error.tmpl')
         return templ.render(message='Not Found', docroot=self.docroot, status=status, version=__version__)
 
     def jsonify_error(self: 'HawkEyeWebUi', status: str, message: str) -> dict:
@@ -181,7 +184,7 @@ class HawkEyeWebUi:
         Returns:
             None
         """
-        templ = Template(filename='error.tmpl', lookup=self.lookup)
+        templ = self.lookup.get_template('error.tmpl')
         return templ.render(message=message, docroot=self.docroot, version=__version__)
 
     def cleanUserInput(self: 'HawkEyeWebUi', inputList: list) -> list:
@@ -339,11 +342,11 @@ class HawkEyeWebUi:
                     raise cherrypy.HTTPRedirect("/admin_dashboard")
                 else:
                     # Invalid login, render error page
-                    templ = Template(filename='hawkeye/templates/error.tmpl', lookup=self.lookup)
+                    templ = self.lookup.get_template('error.tmpl')
                     return templ.render(error="Invalid username or password")
 
             # If form not submitted, show login selection page
-            templ = Template(filename='hawkeye/templates/login_select.tmpl', lookup=self.lookup)
+            templ = self.lookup.get_template('login_select.tmpl')
             return templ.render(
                 docroot=(getattr(self, "docroot", "") or ""),
                 version=getattr(__import__("hawkeye"), "__version__", "1.0")
@@ -405,7 +408,7 @@ class HawkEyeWebUi:
                 else:
                     error = "Invalid username or password"
         
-        templ = Template(filename='hawkeye/templates/login_user.tmpl', lookup=self.lookup)
+        templ = self.lookup.get_template('login_user.tmpl')
         return templ.render(docroot=self.docroot, version=__version__, error=error, success=success)
     
     @cherrypy.expose
@@ -434,7 +437,7 @@ class HawkEyeWebUi:
                 else:
                     error = "Invalid admin username or password"
         
-        templ = Template(filename='hawkeye/templates/login_admin.tmpl', lookup=self.lookup)
+        templ = self.lookup.get_template('login_admin.tmpl')
         return templ.render(docroot=self.docroot, version=__version__, error=error, success=success)
     
     @cherrypy.expose
@@ -448,30 +451,139 @@ class HawkEyeWebUi:
         raise cherrypy.HTTPRedirect(f"{self.docroot}/login")
     
     @cherrypy.expose
-    def forgot_password(self, username: str = None, email: str = None) -> str:
+    def forgot_password(self, email: str = None, user_type: str = 'user') -> str:
         """Forgot password page and handler.
         
         Args:
-            username (str): username
-            email (str): email
+            email (str): email address
+            user_type (str): 'user' or 'admin'
             
         Returns:
             str: Forgot password page HTML
         """
         error = None
         success = None
-        info = None
         
         if cherrypy.request.method == 'POST':
-            if not username or not email:
-                error = "Please enter both username and email"
+            if not email:
+                error = "Please enter your email address"
             else:
-                # In a real implementation, you would send an email or notify admin
-                # For now, we'll just show a message
-                info = "Password reset request submitted. Please contact your administrator to complete the password reset process."
+                dbh = HawkEyeDb(self.config)
+                
+                # Check if user/admin exists with this email
+                if user_type == 'admin':
+                    account = dbh.getAdminByEmail(email)
+                else:
+                    account = dbh.getUserByEmail(email)
+                
+                if account:
+                    # Generate reset token
+                    if user_type == 'admin':
+                        token = dbh.createPasswordResetToken(admin_id=account['id'])
+                    else:
+                        token = dbh.createPasswordResetToken(user_id=account['id'])
+                    
+                    # Create reset link
+                    reset_link = f"{cherrypy.request.base}{self.docroot}/reset_password?token={token}"
+                    
+                    # Try to send email if configured
+                    email_sent = False
+                    email_config = self.config.get('email', {})
+                    
+                    if email_config.get('smtp_user') and email_config.get('smtp_password'):
+                        try:
+                            from hawkeye.email_helper import EmailHelper
+                            
+                            email_helper = EmailHelper(
+                                smtp_host=email_config.get('smtp_host', 'smtp.gmail.com'),
+                                smtp_port=email_config.get('smtp_port', 587),
+                                smtp_user=email_config.get('smtp_user'),
+                                smtp_password=email_config.get('smtp_password'),
+                                from_email=email_config.get('from_email', email_config.get('smtp_user'))
+                            )
+                            
+                            email_success, email_message = email_helper.send_password_reset_email(
+                                to_email=email,
+                                username=account['username'],
+                                reset_link=reset_link
+                            )
+                            
+                            if email_success:
+                                email_sent = True
+                                success = "Password reset link has been sent to your email. Please check your inbox."
+                            else:
+                                error = f"Failed to send email: {email_message}. Please contact administrator."
+                                self.log.error(f"Email send failed: {email_message}")
+                        except Exception as e:
+                            self.log.error(f"Email error: {str(e)}")
+                            error = "Failed to send email. Please contact administrator."
+                    
+                    # If email not sent, show the link (development mode)
+                    if not email_sent:
+                        success = f"<strong>Development Mode:</strong> Email not configured. Copy this link to reset your password:<br><br>" \
+                                 f"<div style='background: #f5f5f5; padding: 10px; border-radius: 5px; word-break: break-all; margin: 10px 0;'>" \
+                                 f"<a href='{reset_link}' target='_blank'>{reset_link}</a></div>" \
+                                 f"<small>This link expires in 1 hour.</small>"
+                    
+                    # Log the reset request
+                    self.log.info(f"Password reset requested for {user_type}: {email}")
+                else:
+                    # Don't reveal if email exists or not for security
+                    success = "If an account with this email exists, a password reset link has been sent."
         
-        templ = Template(filename='forgot_password.tmpl', lookup=self.lookup)
-        return templ.render(docroot=self.docroot, version=__version__, error=error, success=success, info=info)
+        templ = self.lookup.get_template('forgot_password.tmpl')
+        return templ.render(docroot=self.docroot, version=__version__, error=error, success=success, user_type=user_type)
+    
+    @cherrypy.expose
+    def reset_password(self, token: str = None, new_password: str = None, confirm_password: str = None) -> str:
+        """Reset password page and handler.
+        
+        Args:
+            token (str): password reset token
+            new_password (str): new password
+            confirm_password (str): confirm new password
+            
+        Returns:
+            str: Reset password page HTML
+        """
+        error = None
+        success = None
+        
+        if not token:
+            error = "Invalid or missing reset token"
+            templ = self.lookup.get_template('reset_password.tmpl')
+            return templ.render(docroot=self.docroot, version=__version__, error=error, success=success, token=None)
+        
+        dbh = HawkEyeDb(self.config)
+        token_info = dbh.getPasswordResetToken(token)
+        
+        if not token_info:
+            error = "Invalid or expired reset token"
+            templ = self.lookup.get_template('reset_password.tmpl')
+            return templ.render(docroot=self.docroot, version=__version__, error=error, success=success, token=None)
+        
+        if cherrypy.request.method == 'POST':
+            if not new_password or not confirm_password:
+                error = "Please enter and confirm your new password"
+            elif new_password != confirm_password:
+                error = "Passwords do not match"
+            elif len(new_password) < 6:
+                error = "Password must be at least 6 characters long"
+            else:
+                # Reset the password
+                if token_info['user_id']:
+                    dbh.resetUserPassword(token_info['user_id'], new_password)
+                elif token_info['admin_id']:
+                    dbh.resetAdminPassword(token_info['admin_id'], new_password)
+                
+                # Mark token as used
+                dbh.markPasswordResetTokenUsed(token)
+                
+                success = "Password reset successfully! You can now login with your new password."
+                self.log.info(f"Password reset completed for token: {token}")
+        
+        templ = self.lookup.get_template('reset_password.tmpl')
+        return templ.render(docroot=self.docroot, version=__version__, error=error, success=success, token=token)
     
     @cherrypy.expose
     def admin(self) -> str:
@@ -485,28 +597,65 @@ class HawkEyeWebUi:
         
         dbh = HawkEyeDb(self.config)
         
-        # Get statistics
+        # Get admin statistics
+        admins = dbh.getAllAdmins()
+        admins_fmt = []
+        for a in admins:
+            created_val = a[4] if len(a) > 4 else None
+            last_login_val = a[5] if len(a) > 5 else None
+            admins_fmt.append([
+                a[0],            # id
+                a[1],            # username
+                a[2],            # email
+                a[3] or 'N/A',   # mobile
+                created_val,     # created (epoch or None)
+                last_login_val,  # last login (epoch or None)
+                a[6] if len(a) > 6 else False  # is_active
+            ])
+        total_admins = len(admins)
+        
+        # Get user statistics
         users = dbh.getAllUsers()
+        users_fmt = []
+        for u in users:
+            created_val = u[4] if len(u) > 4 else None
+            last_login_val = u[5] if len(u) > 5 else None
+            users_fmt.append([
+                u[0],            # id
+                u[1],            # username
+                u[2],            # email
+                u[3] or 'N/A',   # mobile
+                created_val,     # created (epoch or None)
+                last_login_val,  # last login (epoch or None)
+                u[6] if len(u) > 6 else False  # is_active
+            ])
         total_users = len(users)
         
-        # Get scan statistics
-        scan_list = dbh.scanInstanceList()
+        # Get scan statistics (admin panel shows all scans)
+        scan_list = dbh.scanInstanceList(is_admin_panel=True)
         total_scans = len(scan_list)
         active_scans = len([s for s in scan_list if s[6] in ['RUNNING', 'STARTING', 'STARTED']])
         
-        # Get today's logins (simplified - in real implementation, you'd query activity table)
-        today_logins = 0  # Placeholder
+        # Get today's logins
+        today_logins = dbh.getTodayLogins()
         
-        templ = Template(filename='admin_dashboard.tmpl', lookup=self.lookup)
+        # Get current user info
+        user_info = self.auth.get_current_user()
+        
+        templ = self.lookup.get_template('admin_dashboard.tmpl')
         return templ.render(
             docroot=self.docroot, 
             version=__version__,
-            users=users,
+            admins=admins_fmt,
+            total_admins=total_admins,
+            users=users_fmt,
             total_users=total_users,
             total_scans=total_scans,
             active_scans=active_scans,
             today_logins=today_logins,
-            pageid='ADMIN'
+            pageid='ADMIN',
+            time=time,
+            user_info=user_info
         )
     
     @cherrypy.expose
@@ -542,13 +691,19 @@ class HawkEyeWebUi:
     
     @cherrypy.expose
     @cherrypy.tools.json_out()
-    def admin_create_admin(self, username: str, password: str, email: str) -> dict:
+    def admin_create_admin(self, username: str, password: str, email: str, mobile: str = None, 
+                          auth_username: str = None, auth_password: str = None, 
+                          confirm_password: str = None) -> dict:
         """Create a new admin (admin only).
         
         Args:
-            username (str): username
-            password (str): password
-            email (str): email
+            username (str): username for new admin
+            password (str): password for new admin
+            email (str): email for new admin
+            mobile (str): mobile number (optional)
+            auth_username (str): authorizing admin username
+            auth_password (str): authorizing admin password
+            confirm_password (str): password confirmation
             
         Returns:
             dict: JSON response
@@ -559,11 +714,24 @@ class HawkEyeWebUi:
         if not username or not password or not email:
             return {'success': False, 'message': 'Username, password, and email are required'}
         
+        if not auth_username or not auth_password:
+            return {'success': False, 'message': 'Authorizing admin credentials are required'}
+        
+        if confirm_password and password != confirm_password:
+            return {'success': False, 'message': 'Passwords do not match'}
+        
         try:
             dbh = HawkEyeDb(self.config)
+            
+            # Verify authorizing admin credentials
+            ip_address = self.auth.get_client_ip()
+            user_agent = self.auth.get_user_agent()
+            if not self.auth.login_admin(auth_username, auth_password, ip_address, user_agent, verify_only=True):
+                return {'success': False, 'message': 'Invalid authorizing admin credentials'}
+            
             current_admin = self.auth.get_current_user()
             
-            if dbh.createAdmin(username, password, email, current_admin['id']):
+            if dbh.createAdmin(username, password, email, mobile, current_admin['id']):
                 return {'success': True, 'message': 'Admin created successfully'}
             else:
                 return {'success': False, 'message': 'Failed to create admin'}
@@ -633,6 +801,146 @@ class HawkEyeWebUi:
     
     @cherrypy.expose
     @cherrypy.tools.json_out()
+    def admin_get_admins(self) -> dict:
+        """Get all admins list (admin only).
+        
+        Returns:
+            dict: JSON response with admin list
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            admins = dbh.getAllAdmins()
+            
+            return {
+                'success': True,
+                'admins': [
+                    {
+                        'id': admin[0],
+                        'username': admin[1],
+                        'email': admin[2],
+                        'mobile': admin[3] if admin[3] else 'N/A',
+                        'created_at': admin[4],
+                        'last_login': admin[5],
+                        'is_active': admin[6] if len(admin) > 6 else True
+                    }
+                    for admin in admins
+                ]
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching admins: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_get_users(self) -> dict:
+        """Get all users list (admin only).
+        
+        Returns:
+            dict: JSON response with user list
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            users = dbh.getAllUsers()
+            
+            return {
+                'success': True,
+                'users': [
+                    {
+                        'id': user[0],
+                        'username': user[1],
+                        'email': user[2],
+                        'mobile': user[3] if user[3] else 'N/A',
+                        'created_at': user[4],
+                        'last_login': user[5],
+                        'is_active': user[6] if len(user) > 6 else True
+                    }
+                    for user in users
+                ]
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching users: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_get_today_logins(self) -> dict:
+        """Get today's login details (admin only).
+        
+        Returns:
+            dict: JSON response with today's login details
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            logins = dbh.getTodayLoginDetails()
+            
+            return {
+                'success': True,
+                'logins': [
+                    {
+                        'username': login[0],
+                        'login_time': login[1],
+                        'ip_address': login[2] if login[2] else 'N/A',
+                        'account_type': login[3]
+                    }
+                    for login in logins
+                ]
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching today\'s logins: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_get_all_scans(self) -> dict:
+        """Get all scans with user information (admin only).
+        
+        Returns:
+            dict: JSON response with all scans
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            scans = dbh.getAllScansWithOwners()
+            
+            return {
+                'success': True,
+                'scans': scans
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching scans: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_get_active_scans(self) -> dict:
+        """Get active/running scans (admin only).
+        
+        Returns:
+            dict: JSON response with active scans
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            scans = dbh.getActiveScansWithOwners()
+            
+            return {
+                'success': True,
+                'scans': scans
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching active scans: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
     def admin_recent_activity(self) -> dict:
         """Get recent system activity (admin only).
         
@@ -698,6 +1006,450 @@ class HawkEyeWebUi:
             return csv_content
         except Exception as e:
             return f"Error exporting users: {str(e)}"
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_get_system_settings(self) -> dict:
+        """Get all system settings (admin only).
+        
+        Returns:
+            dict: JSON response with system settings
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            settings = dbh.getSystemSettings()
+            
+            return {
+                'success': True,
+                'settings': [
+                    {
+                        'id': setting[0],
+                        'key': setting[1],
+                        'value': setting[2],
+                        'type': setting[3],
+                        'description': setting[4],
+                        'updated_at': setting[5],
+                        'updated_by': setting[6]
+                    }
+                    for setting in settings
+                ]
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching system settings: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_update_system_setting(self, setting_key: str, setting_value: str) -> dict:
+        """Update a system setting (admin only).
+        
+        Args:
+            setting_key (str): setting key
+            setting_value (str): new value
+            
+        Returns:
+            dict: JSON response
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            current_admin = self.auth.get_current_user()
+            
+            if dbh.updateSystemSetting(setting_key, setting_value, current_admin['id']):
+                return {'success': True, 'message': 'Setting updated successfully'}
+            else:
+                return {'success': False, 'message': 'Failed to update setting'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating setting: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_get_system_logs(self, limit: int = 100, offset: int = 0, log_level: str = None, 
+                             log_category: str = None, start_date: int = None, end_date: int = None) -> dict:
+        """Get system logs with filtering (admin only).
+        
+        Args:
+            limit (int): number of logs to return
+            offset (int): offset for pagination
+            log_level (str): filter by log level
+            log_category (str): filter by category
+            start_date (int): start timestamp
+            end_date (int): end timestamp
+            
+        Returns:
+            dict: JSON response with system logs
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            
+            # Convert string parameters to appropriate types
+            limit = int(limit) if limit else 100
+            offset = int(offset) if offset else 0
+            start_date = int(start_date) if start_date else None
+            end_date = int(end_date) if end_date else None
+            
+            result = dbh.getSystemLogs(limit, offset, log_level, log_category, start_date, end_date)
+            
+            return {
+                'success': True,
+                'logs': [
+                    {
+                        'id': log[0],
+                        'level': log[1],
+                        'category': log[2],
+                        'message': log[3],
+                        'user_id': log[4],
+                        'admin_id': log[5],
+                        'ip_address': log[6],
+                        'user_agent': log[7],
+                        'additional_data': log[8],
+                        'created_at': log[9],
+                        'user_username': log[10],
+                        'admin_username': log[11]
+                    }
+                    for log in result['logs']
+                ],
+                'total': result['total']
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching system logs: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def admin_get_system_stats(self) -> dict:
+        """Get system statistics (admin only).
+        
+        Returns:
+            dict: JSON response with system stats
+        """
+        if not self.auth.require_auth('admin'):
+            return {'success': False, 'message': 'Admin authentication required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            stats = dbh.getSystemStats()
+            
+            return {
+                'success': True,
+                'stats': stats
+            }
+        except Exception as e:
+            return {'success': False, 'message': f'Error fetching system stats: {str(e)}'}
+    
+    @cherrypy.expose
+    def profile(self) -> str:
+        """User/Admin profile page.
+        
+        Returns:
+            str: profile page HTML
+        """
+        # Check if user is logged in
+        user_info = self.auth.get_current_user()
+        if not user_info:
+            raise cherrypy.HTTPRedirect(f"{self.docroot}/login")
+        
+        dbh = HawkEyeDb(self.config)
+        
+        # Get profile data
+        profile_data = {
+            'username': user_info['username'],
+            'email': user_info['email'],
+            'mobile': user_info.get('mobile', 'N/A'),
+            'type': user_info['type'],
+            'is_active': True
+        }
+        
+        # Get additional user/admin data
+        if user_info['type'] == 'admin':
+            with dbh.dbhLock:
+                dbh.dbh.execute("""
+                    SELECT created_at, last_login, is_active 
+                    FROM tbl_admins WHERE id = ?
+                """, (user_info['id'],))
+                result = dbh.dbh.fetchone()
+                if result:
+                    profile_data['created_at'] = result[0]
+                    profile_data['last_login'] = result[1]
+                    profile_data['is_active'] = result[2]
+        else:
+            with dbh.dbhLock:
+                dbh.dbh.execute("""
+                    SELECT mobile, created_at, last_login, is_active 
+                    FROM tbl_users WHERE id = ?
+                """, (user_info['id'],))
+                result = dbh.dbh.fetchone()
+                if result:
+                    profile_data['mobile'] = result[0] or 'N/A'
+                    profile_data['created_at'] = result[1]
+                    profile_data['last_login'] = result[2]
+                    profile_data['is_active'] = result[3]
+        
+        # Format dates
+        profile_data['created_at_formatted'] = time.strftime("%B %d, %Y at %I:%M %p", time.localtime(profile_data.get('created_at', time.time())))
+        profile_data['last_login_formatted'] = time.strftime("%B %d, %Y at %I:%M %p", time.localtime(profile_data.get('last_login', time.time()))) if profile_data.get('last_login') else 'Never'
+        
+        # Get statistics - only for this user/admin
+        stats = {
+            'total_scans': 0,
+            'active_scans': 0,
+            'total_activities': 0
+        }
+        
+        with dbh.dbhLock:
+            try:
+                if user_info['type'] == 'admin':
+                    # Get scans created by this admin
+                    dbh.dbh.execute("""
+                        SELECT COUNT(*) FROM tbl_scan_instance 
+                        WHERE created_by_admin_id = ?
+                    """, (user_info['id'],))
+                    result = dbh.dbh.fetchone()
+                    stats['total_scans'] = result[0] if result else 0
+                    
+                    dbh.dbh.execute("""
+                        SELECT COUNT(*) FROM tbl_scan_instance 
+                        WHERE created_by_admin_id = ? AND scan_status IN ('RUNNING', 'STARTING', 'STARTED')
+                    """, (user_info['id'],))
+                    result = dbh.dbh.fetchone()
+                    stats['active_scans'] = result[0] if result else 0
+                else:
+                    # Get scans created by this user
+                    dbh.dbh.execute("""
+                        SELECT COUNT(*) FROM tbl_scan_instance 
+                        WHERE created_by_user_id = ?
+                    """, (user_info['id'],))
+                    result = dbh.dbh.fetchone()
+                    stats['total_scans'] = result[0] if result else 0
+                    
+                    dbh.dbh.execute("""
+                        SELECT COUNT(*) FROM tbl_scan_instance 
+                        WHERE created_by_user_id = ? AND scan_status IN ('RUNNING', 'STARTING', 'STARTED')
+                    """, (user_info['id'],))
+                    result = dbh.dbh.fetchone()
+                    stats['active_scans'] = result[0] if result else 0
+            except Exception:
+                pass
+        
+        # Get recent activities
+        activities = []
+        activity_data = []
+        
+        with dbh.dbhLock:
+            try:
+                if user_info['type'] == 'admin':
+                    dbh.dbh.execute("""
+                        SELECT activity_type, activity_description, scan_id, created_at, ip_address 
+                        FROM tbl_user_activity 
+                        WHERE admin_id = ? 
+                        ORDER BY created_at DESC
+                    """, (user_info['id'],))
+                else:
+                    dbh.dbh.execute("""
+                        SELECT activity_type, activity_description, scan_id, created_at, ip_address 
+                        FROM tbl_user_activity 
+                        WHERE user_id = ? 
+                        ORDER BY created_at DESC
+                    """, (user_info['id'],))
+                activity_data = dbh.dbh.fetchall()
+            except Exception:
+                activity_data = []
+        
+        stats['total_activities'] = len(activity_data)
+        
+        for activity in activity_data[:10]:
+            activities.append({
+                'type': activity[0],
+                'description': activity[1],
+                'time_formatted': time.strftime("%B %d, %Y at %I:%M %p", time.localtime(activity[3]))
+            })
+        
+        # Get session information
+        session_id = cherrypy.session.get('session_id')
+        session_info = {
+            'ip_address': self.auth.get_client_ip(),
+            'user_agent': self.auth.get_user_agent(),
+            'created_at_formatted': 'Current session',
+            'expires_at_formatted': 'Active'
+        }
+        
+        if session_id:
+            session_data = dbh.getSession(session_id)
+            if session_data:
+                session_info['created_at_formatted'] = time.strftime("%B %d, %Y at %I:%M %p", time.localtime(session_data['created_at']))
+                session_info['expires_at_formatted'] = time.strftime("%B %d, %Y at %I:%M %p", time.localtime(session_data['expires_at']))
+        
+        templ = self.lookup.get_template('profile.tmpl')
+        return templ.render(
+            docroot=self.docroot,
+            version=__version__,
+            pageid='PROFILE',
+            user_info=user_info,
+            profile_data=profile_data,
+            stats=stats,
+            activities=activities,
+            session_info=session_info
+        )
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def update_profile(self, username: str, email: str, mobile: str = None) -> dict:
+        """Update user/admin profile.
+        
+        Args:
+            username (str): new username
+            email (str): new email
+            mobile (str): new mobile number
+            
+        Returns:
+            dict: JSON response
+        """
+        user_info = self.auth.get_current_user()
+        if not user_info:
+            return {'success': False, 'message': 'Authentication required'}
+        
+        if not username or not email:
+            return {'success': False, 'message': 'Username and email are required'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            
+            with dbh.dbhLock:
+                if user_info['type'] == 'admin':
+                    dbh.dbh.execute("""
+                        UPDATE tbl_admins 
+                        SET username = ?, email = ?
+                        WHERE id = ?
+                    """, (username, email, user_info['id']))
+                else:
+                    dbh.dbh.execute("""
+                        UPDATE tbl_users 
+                        SET username = ?, email = ?, mobile = ?
+                        WHERE id = ?
+                    """, (username, email, mobile, user_info['id']))
+                
+                dbh.conn.commit()
+            
+            # Log the change
+            dbh.logSystemEvent(
+                'INFO',
+                'USER_MANAGEMENT',
+                f'{user_info["type"].capitalize()} "{user_info["username"]}" updated their profile',
+                user_id=user_info['id'] if user_info['type'] == 'user' else None,
+                admin_id=user_info['id'] if user_info['type'] == 'admin' else None,
+                ip_address=self.auth.get_client_ip()
+            )
+            
+            return {'success': True, 'message': 'Profile updated successfully'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error updating profile: {str(e)}'}
+    
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def change_password(self, current_password: str, new_password: str) -> dict:
+        """Change user/admin password.
+        
+        Args:
+            current_password (str): current password
+            new_password (str): new password
+            
+        Returns:
+            dict: JSON response
+        """
+        user_info = self.auth.get_current_user()
+        if not user_info:
+            return {'success': False, 'message': 'Authentication required'}
+        
+        if not current_password or not new_password:
+            return {'success': False, 'message': 'All fields are required'}
+        
+        if len(new_password) < 6:
+            return {'success': False, 'message': 'Password must be at least 6 characters long'}
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            
+            # Verify current password
+            if user_info['type'] == 'admin':
+                auth_result = dbh.authenticateAdmin(user_info['username'], current_password)
+            else:
+                auth_result = dbh.authenticateUser(user_info['username'], current_password)
+            
+            if not auth_result:
+                return {'success': False, 'message': 'Current password is incorrect'}
+            
+            # Update password
+            import hashlib
+            password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+            
+            with dbh.dbhLock:
+                if user_info['type'] == 'admin':
+                    dbh.dbh.execute("""
+                        UPDATE tbl_admins 
+                        SET password_hash = ?
+                        WHERE id = ?
+                    """, (password_hash, user_info['id']))
+                else:
+                    dbh.dbh.execute("""
+                        UPDATE tbl_users 
+                        SET password_hash = ?
+                        WHERE id = ?
+                    """, (password_hash, user_info['id']))
+                
+                dbh.conn.commit()
+            
+            # Log the change
+            dbh.logSystemEvent(
+                'WARNING',
+                'AUTH',
+                f'{user_info["type"].capitalize()} "{user_info["username"]}" changed their password',
+                user_id=user_info['id'] if user_info['type'] == 'user' else None,
+                admin_id=user_info['id'] if user_info['type'] == 'admin' else None,
+                ip_address=self.auth.get_client_ip()
+            )
+            
+            return {'success': True, 'message': 'Password changed successfully'}
+        except Exception as e:
+            return {'success': False, 'message': f'Error changing password: {str(e)}'}
+    
+    @cherrypy.expose
+    def admin_export_system_logs(self, log_level: str = None, log_category: str = None) -> str:
+        """Export system logs to CSV (admin only).
+        
+        Args:
+            log_level (str): filter by log level
+            log_category (str): filter by category
+            
+        Returns:
+            str: CSV export of system logs
+        """
+        if not self.auth.require_auth('admin'):
+            raise cherrypy.HTTPRedirect(f"{self.docroot}/login/admin")
+        
+        try:
+            dbh = HawkEyeDb(self.config)
+            result = dbh.getSystemLogs(limit=10000, offset=0, log_level=log_level, log_category=log_category)
+            
+            csv_content = "Timestamp,Level,Category,Message,User,Admin,IP Address\n"
+            for log in result['logs']:
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(log[9]))
+                user = log[10] if log[10] else ''
+                admin = log[11] if log[11] else ''
+                ip = log[6] if log[6] else ''
+                message = log[3].replace('"', '""')  # Escape quotes for CSV
+                csv_content += f'"{timestamp}","{log[1]}","{log[2]}","{message}","{user}","{admin}","{ip}"\n'
+            
+            cherrypy.response.headers['Content-Disposition'] = 'attachment; filename="hawkeye_system_logs.csv"'
+            cherrypy.response.headers['Content-Type'] = 'text/csv'
+            return csv_content
+        except Exception as e:
+            return f"Error exporting logs: {str(e)}"
 
     #
     # USER INTERFACE PAGES
@@ -1278,7 +2030,7 @@ class HawkEyeWebUi:
                 self.log.info("Waiting for the scan to initialize...")
                 time.sleep(1)
 
-        templ = Template(filename='hawkeye/templatesscanlist.tmpl', lookup=self.lookup)
+        templ = lookup.get_template('scanlist.tmpl')
         return templ.render(rerunscans=True, docroot=self.docroot, pageid="SCANLIST", version=__version__)
 
     @cherrypy.expose
@@ -1305,7 +2057,7 @@ class HawkEyeWebUi:
         
         dbh = HawkEyeDb(self.config)
         types = dbh.eventTypes()
-        templ = Template(filename='newscan.tmpl', lookup=self.lookup)
+        templ = self.lookup.get_template('newscan.tmpl')
         return templ.render(pageid='NEWSCAN', types=types, docroot=self.docroot,
                             modules=self.config['__modules__'], scanname="",
                             selectedmods="", scantarget="", version=__version__, user_info=user_info)
@@ -1341,12 +2093,15 @@ class HawkEyeWebUi:
             scantarget = "&quot;" + scantarget + "&quot;"
 
         modlist = scanconfig['_modulesenabled'].split(',')
+        
+        # Get current user info
+        user_info = self.auth.get_current_user()
 
-        templ = Template(filename='newscan.tmpl', lookup=self.lookup)
+        templ = self.lookup.get_template('newscan.tmpl')
         return templ.render(pageid='NEWSCAN', types=types, docroot=self.docroot,
                             modules=self.config['__modules__'], selectedmods=modlist,
                             scanname=str(scanname),
-                            scantarget=str(scantarget), version=__version__)
+                            scantarget=str(scantarget), version=__version__, user_info=user_info)
 
     @cherrypy.expose
     def index(self: 'HawkEyeWebUi') -> str:
@@ -1370,7 +2125,7 @@ class HawkEyeWebUi:
                 ip_address=self.auth.get_client_ip()
             )
         
-        templ = Template(filename='scanlist.tmpl', lookup=self.lookup)
+        templ = self.lookup.get_template('scanlist.tmpl')
         return templ.render(pageid='SCANLIST', docroot=self.docroot, version=__version__, user_info=user_info)
 
     @cherrypy.expose
@@ -1383,14 +2138,17 @@ class HawkEyeWebUi:
         Returns:
             str: scan info page HTML
         """
+        # Get current user info
+        user_info = self.auth.get_current_user()
+        
         dbh = HawkEyeDb(self.config)
         res = dbh.scanInstanceGet(id)
         if res is None:
             return self.error("Scan ID not found.")
 
-        templ = Template(filename='scaninfo.tmpl', lookup=self.lookup, input_encoding='utf-8')
+        templ = self.lookup.get_template('scaninfo.tmpl')
         return templ.render(id=id, name=html.escape(res[0]), status=res[5], docroot=self.docroot, version=__version__,
-                            pageid="SCANLIST")
+                            pageid="SCANLIST", user_info=user_info)
 
     @cherrypy.expose
     def opts(self: 'HawkEyeWebUi', updated: str = None) -> str:
@@ -1402,10 +2160,266 @@ class HawkEyeWebUi:
         Returns:
             str: scan options page HTML
         """
-        templ = Template(filename='opts.tmpl', lookup=self.lookup)
+        # Get current user info
+        user_info = self.auth.get_current_user()
+        
+        templ = self.lookup.get_template('opts.tmpl')
         self.token = random.SystemRandom().randint(0, 99999999)
         return templ.render(opts=self.config, pageid='SETTINGS', token=self.token, version=__version__,
-                            updated=updated, docroot=self.docroot)
+                            updated=updated, docroot=self.docroot, user_info=user_info)
+
+    @cherrypy.expose
+    def moduleinfo(self: 'HawkEyeWebUi') -> str:
+        """Show module information page.
+
+        Returns:
+            str: module information page HTML
+        """
+        # Check if user is authenticated
+        if not self.auth.require_auth():
+            raise cherrypy.HTTPRedirect(f"{self.docroot}/login")
+        
+        # Get current user info
+        user_info = self.auth.get_current_user()
+        
+        # Module data: [name, category, description, requiresAPIKey]
+        module_data = json.dumps([
+            ['helib', 'Core', 'Core HawkEye library functions', 'No'],
+            ['hescan', 'Core', 'Main scanning engine', 'No'],
+            ['hep_abstractapi', 'API Services', 'Email validation and IP geolocation via AbstractAPI', 'Yes'],
+            ['hep_abusech', 'Threat Intelligence', 'Check against abuse.ch malware and botnet database', 'No'],
+            ['hep_abuseipdb', 'Threat Intelligence', 'Check IP addresses against AbuseIPDB for malicious activity reports', 'Yes'],
+            ['hep_abusix', 'Threat Intelligence', 'Query Abusix Mail Intelligence for email reputation', 'Yes'],
+            ['hep_accounts', 'Social Media', 'Search for usernames across multiple social media platforms', 'No'],
+            ['hep_adblock', 'Security', 'Check domains against adblock lists', 'No'],
+            ['hep_adguard_dns', 'DNS', 'Query AdGuard DNS for domain filtering information', 'No'],
+            ['hep_ahmia', 'Dark Web', 'Search Ahmia.fi for .onion sites', 'No'],
+            ['hep_alienvault', 'Threat Intelligence', 'Query AlienVault OTX for threat intelligence data', 'Yes'],
+            ['hep_alienvaultiprep', 'Reputation', 'Check IP reputation via AlienVault', 'No'],
+            ['hep_apple_itunes', 'Search', 'Search Apple iTunes for apps and content', 'No'],
+            ['hep_archiveorg', 'Web Archive', 'Search Archive.org Wayback Machine for historical website data', 'No'],
+            ['hep_arin', 'Network', 'Query ARIN WHOIS for IP address registration information', 'No'],
+            ['hep_azureblobstorage', 'Cloud Storage', 'Discover Azure Blob Storage containers', 'No'],
+            ['hep_base64', 'Data Processing', 'Decode Base64 encoded strings', 'No'],
+            ['hep_bgpview', 'Network', 'Query BGPView for BGP routing and ASN information', 'No'],
+            ['hep_binaryedge', 'Search Engine', 'Search BinaryEdge for internet-wide scan data', 'Yes'],
+            ['hep_bingsearch', 'Search Engine', 'Perform Bing web searches', 'Yes'],
+            ['hep_bingsharedip', 'Network', 'Find websites sharing the same IP address via Bing', 'No'],
+            ['hep_binstring', 'Data Processing', 'Extract binary strings from data', 'No'],
+            ['hep_bitcoin', 'Cryptocurrency', 'Look up Bitcoin addresses and transactions', 'No'],
+            ['hep_bitcoinabuse', 'Cryptocurrency', 'Check Bitcoin addresses against abuse database', 'No'],
+            ['hep_bitcoinwhoswho', 'Cryptocurrency', 'Identify Bitcoin address owners', 'No'],
+            ['hep_blockchain', 'Cryptocurrency', 'Query blockchain.com for Bitcoin data', 'No'],
+            ['hep_blocklistde', 'Threat Intelligence', 'Check IPs against blocklist.de', 'No'],
+            ['hep_botscout', 'Security', 'Check emails and IPs against BotScout spam database', 'Yes'],
+            ['hep_botvrij', 'Threat Intelligence', 'Check against Botvrij.eu botnet database', 'No'],
+            ['hep_builtwith', 'Web Technology', 'Identify web technologies used by websites', 'Yes'],
+            ['hep_c99', 'API Services', 'Multi-purpose API for domain, IP, and phone lookups', 'Yes'],
+            ['hep_callername', 'Phone', 'Look up phone number caller information', 'No'],
+            ['hep_censys', 'Search Engine', 'Search Censys for internet-wide scan data', 'Yes'],
+            ['hep_certspotter', 'SSL/TLS', 'Monitor SSL/TLS certificates via Certificate Transparency logs', 'Yes'],
+            ['hep_cinsscore', 'Threat Intelligence', 'Check IPs against CINS Army threat list', 'No'],
+            ['hep_circllu', 'Threat Intelligence', 'Query CIRCL.LU passive DNS and SSL databases', 'Yes'],
+            ['hep_citadel', 'Threat Intelligence', 'Check against Citadel Trojan C&C servers', 'No'],
+            ['hep_cleanbrowsing', 'DNS', 'Query CleanBrowsing DNS for filtering information', 'No'],
+            ['hep_cleantalk', 'Security', 'Check emails and IPs against CleanTalk spam database', 'Yes'],
+            ['hep_clearbit', 'Business Intelligence', 'Enrich company and person data via Clearbit', 'Yes'],
+            ['hep_cloudflaredns', 'DNS', 'Query Cloudflare DNS', 'No'],
+            ['hep_coinblocker', 'Security', 'Check domains against cryptocurrency mining blocklists', 'No'],
+            ['hep_commoncrawl', 'Web Archive', 'Search Common Crawl web archive', 'No'],
+            ['hep_comodo', 'SSL/TLS', 'Query Comodo certificate database', 'No'],
+            ['hep_company', 'Business Intelligence', 'Extract company information from data', 'No'],
+            ['hep_cookie', 'Web', 'Extract and analyze HTTP cookies', 'No'],
+            ['hep_countryname', 'Geolocation', 'Identify country from various data types', 'No'],
+            ['hep_creditcard', 'Data Processing', 'Identify credit card numbers in data', 'No'],
+            ['hep_crobat_api', 'DNS', 'Query Project Sonar Crobat API for DNS data', 'No'],
+            ['hep_crossref', 'Research', 'Search academic publications via Crossref', 'No'],
+            ['hep_crt', 'SSL/TLS', 'Search crt.sh Certificate Transparency logs', 'No'],
+            ['hep_crxcavator', 'Browser Extensions', 'Analyze Chrome extensions via CRXcavator', 'Yes'],
+            ['hep_customfeed', 'Custom', 'Query custom threat intelligence feeds', 'No'],
+            ['hep_cybercrimetracker', 'Threat Intelligence', 'Check against cybercrime-tracker.net C&C database', 'No'],
+            ['hep_debounce', 'Email', 'Validate email addresses via Debounce', 'Yes'],
+            ['hep_dehashed', 'Data Breach', 'Search Dehashed for breached credentials', 'Yes'],
+            ['hep_digitaloceanspace', 'Cloud Storage', 'Discover DigitalOcean Spaces', 'No'],
+            ['hep_dns_for_family', 'DNS', 'Query DNS for Family filtering service', 'No'],
+            ['hep_dnsbrute', 'DNS', 'Brute force DNS subdomains', 'No'],
+            ['hep_dnscommonsrv', 'DNS', 'Check for common DNS SRV records', 'No'],
+            ['hep_dnsdb', 'DNS', 'Query Farsight DNSDB for passive DNS data', 'Yes'],
+            ['hep_dnsdumpster', 'DNS', 'Search DNSdumpster for DNS records', 'No'],
+            ['hep_dnsgrep', 'DNS', 'Search DNS records via DNSGrep', 'No'],
+            ['hep_dnsneighbor', 'DNS', 'Find DNS neighbors (domains on same IP)', 'No'],
+            ['hep_dnsraw', 'DNS', 'Perform raw DNS queries', 'No'],
+            ['hep_dnsresolve', 'DNS', 'Resolve DNS records', 'No'],
+            ['hep_dnszonexfer', 'DNS', 'Attempt DNS zone transfers', 'No'],
+            ['hep_dronebl', 'Threat Intelligence', 'Check IPs against DroneBL', 'No'],
+            ['hep_duckduckgo', 'Search Engine', 'Perform DuckDuckGo searches', 'No'],
+            ['hep_email', 'Email', 'Extract email addresses from data', 'No'],
+            ['hep_emailcrawlr', 'Email', 'Find email addresses via EmailCrawlr', 'Yes'],
+            ['hep_emailformat', 'Email', 'Discover email format patterns for companies', 'No'],
+            ['hep_emailrep', 'Email', 'Check email reputation via EmailRep', 'No'],
+            ['hep_emergingthreats', 'Threat Intelligence', 'Check against Emerging Threats rules', 'No'],
+            ['hep_errors', 'Data Processing', 'Extract error messages from data', 'No'],
+            ['hep_ethereum', 'Cryptocurrency', 'Look up Ethereum addresses', 'No'],
+            ['hep_etherscan', 'Cryptocurrency', 'Query Etherscan for Ethereum blockchain data', 'Yes'],
+            ['hep_filemeta', 'File Analysis', 'Extract metadata from files', 'No'],
+            ['hep_flickr', 'Social Media', 'Search Flickr for photos and users', 'Yes'],
+            ['hep_focsec', 'Threat Intelligence', 'Query FOC Security threat feeds', 'No'],
+            ['hep_fortinet', 'Threat Intelligence', 'Check against Fortinet threat intelligence', 'No'],
+            ['hep_fraudguard', 'Fraud Detection', 'Check IPs and emails via FraudGuard', 'Yes'],
+            ['hep_fsecure_riddler', 'DNS', 'Query F-Secure Riddler passive DNS', 'No'],
+            ['hep_fullcontact', 'Contact Enrichment', 'Enrich contact information via FullContact', 'Yes'],
+            ['hep_fullhunt', 'Attack Surface', 'Discover attack surface via FullHunt', 'Yes'],
+            ['hep_github', 'Code Repository', 'Search GitHub for code, users, and repositories', 'Yes'],
+            ['hep_gleif', 'Business Intelligence', 'Look up Legal Entity Identifiers (LEI)', 'No'],
+            ['hep_google_tag_manager', 'Web Analytics', 'Identify Google Tag Manager usage', 'No'],
+            ['hep_googlemaps', 'Geolocation', 'Query Google Maps for location data', 'Yes'],
+            ['hep_googleobjectstorage', 'Cloud Storage', 'Discover Google Cloud Storage buckets', 'No'],
+            ['hep_googlesafebrowsing', 'Security', 'Check URLs against Google Safe Browsing', 'Yes'],
+            ['hep_googlesearch', 'Search Engine', 'Perform Google searches', 'Yes'],
+            ['hep_gravatar', 'Social Media', 'Look up Gravatar profiles', 'No'],
+            ['hep_grayhatwarfare', 'Cloud Storage', 'Search for exposed S3 buckets via GrayhatWarfare', 'Yes'],
+            ['hep_greensnow', 'Threat Intelligence', 'Check IPs against GreenSnow blocklist', 'No'],
+            ['hep_grep_app', 'Code Search', 'Search code repositories via grep.app', 'No'],
+            ['hep_greynoise', 'Threat Intelligence', 'Query GreyNoise for internet scanner data', 'Yes'],
+            ['hep_greynoise_community', 'Threat Intelligence', 'Query GreyNoise Community API', 'Yes'],
+            ['hep_h1nobbdde', 'Threat Intelligence', 'Check against H1 NobbDe threat list', 'No'],
+            ['hep_hackertarget', 'Network Tools', 'Use HackerTarget API for various network queries', 'Yes'],
+            ['hep_hashes', 'Data Processing', 'Extract hash values from data', 'No'],
+            ['hep_haveibeenpwned', 'Data Breach', 'Check emails against Have I Been Pwned', 'Yes'],
+            ['hep_honeypot', 'Threat Intelligence', 'Identify honeypot systems', 'No'],
+            ['hep_hosting', 'Network', 'Identify hosting providers', 'No'],
+            ['hep_hostio', 'DNS', 'Query Host.io for domain and DNS data', 'Yes'],
+            ['hep_hunter', 'Email', 'Find email addresses via Hunter.io', 'Yes'],
+            ['hep_hybrid_analysis', 'Malware Analysis', 'Query Hybrid Analysis for malware reports', 'Yes'],
+            ['hep_iban', 'Financial', 'Validate IBAN numbers', 'No'],
+            ['hep_iknowwhatyoudownload', 'Torrent', 'Check what torrents an IP has downloaded', 'Yes'],
+            ['hep_intelx', 'Search Engine', 'Search Intelligence X for leaked data', 'Yes'],
+            ['hep_intfiles', 'Data Processing', 'Identify interesting files', 'No'],
+            ['hep_ipapico', 'Geolocation', 'IP geolocation via ipapi.co', 'No'],
+            ['hep_ipapicom', 'Geolocation', 'IP geolocation via ipapi.com', 'Yes'],
+            ['hep_ipinfo', 'Geolocation', 'IP geolocation and ASN info via ipinfo.io', 'Yes'],
+            ['hep_ipqualityscore', 'Fraud Detection', 'Check IP quality and fraud score', 'Yes'],
+            ['hep_ipregistry', 'Geolocation', 'IP geolocation via IPRegistry', 'Yes'],
+            ['hep_ipstack', 'Geolocation', 'IP geolocation via ipstack', 'Yes'],
+            ['hep_isc', 'Threat Intelligence', 'Query ISC SANS Internet Storm Center', 'No'],
+            ['hep_jsonwhoiscom', 'WHOIS', 'WHOIS lookups via jsonwhois.com', 'Yes'],
+            ['hep_junkfiles', 'Web', 'Identify junk and backup files on web servers', 'No'],
+            ['hep_keybase', 'Social Media', 'Look up Keybase profiles', 'No'],
+            ['hep_koodous', 'Mobile Security', 'Query Koodous for Android app analysis', 'Yes'],
+            ['hep_leakix', 'Data Leaks', 'Search LeakIX for exposed services and data', 'Yes'],
+            ['hep_maltiverse', 'Threat Intelligence', 'Query Maltiverse threat intelligence', 'Yes'],
+            ['hep_malwarepatrol', 'Threat Intelligence', 'Check against Malware Patrol lists', 'Yes'],
+            ['hep_metadefender', 'Malware Analysis', 'Scan files and IPs via MetaDefender', 'Yes'],
+            ['hep_mnemonic', 'Threat Intelligence', 'Query mnemonic passive DNS', 'Yes'],
+            ['hep_multiproxy', 'Proxy Detection', 'Check if IP is a proxy', 'No'],
+            ['hep_myspace', 'Social Media', 'Search MySpace profiles', 'No'],
+            ['hep_nameapi', 'Name Analysis', 'Analyze person names via NameAPI', 'Yes'],
+            ['hep_names', 'Data Processing', 'Extract person names from data', 'No'],
+            ['hep_networksdb', 'Network', 'Query NetworksDB for network information', 'Yes'],
+            ['hep_neutrinoapi', 'API Services', 'Multi-purpose API for various lookups', 'Yes'],
+            ['hep_numverify', 'Phone', 'Validate phone numbers via Numverify', 'Yes'],
+            ['hep_onioncity', 'Dark Web', 'Search Onion.City for .onion sites', 'No'],
+            ['hep_onionsearchengine', 'Dark Web', 'Search onion search engines', 'No'],
+            ['hep_onyphe', 'Search Engine', 'Query Onyphe for internet-wide scan data', 'Yes'],
+            ['hep_openbugbounty', 'Security', 'Check against Open Bug Bounty database', 'No'],
+            ['hep_opencorporates', 'Business Intelligence', 'Search OpenCorporates for company data', 'Yes'],
+            ['hep_opendns', 'DNS', 'Query OpenDNS', 'No'],
+            ['hep_opennic', 'DNS', 'Query OpenNIC DNS', 'No'],
+            ['hep_openphish', 'Threat Intelligence', 'Check against OpenPhish phishing database', 'No'],
+            ['hep_openstreetmap', 'Geolocation', 'Query OpenStreetMap for location data', 'No'],
+            ['hep_pageinfo', 'Web', 'Extract page information from websites', 'No'],
+            ['hep_pastebin', 'Data Leaks', 'Search Pastebin for leaked data', 'Yes'],
+            ['hep_pgp', 'Encryption', 'Search PGP key servers', 'No'],
+            ['hep_phishstats', 'Threat Intelligence', 'Check against PhishStats phishing database', 'No'],
+            ['hep_phishtank', 'Threat Intelligence', 'Check against PhishTank phishing database', 'Yes'],
+            ['hep_phone', 'Phone', 'Extract phone numbers from data', 'No'],
+            ['hep_portscan_tcp', 'Network', 'Perform TCP port scans', 'No'],
+            ['hep_projectdiscovery', 'DNS', 'Query Project Discovery Chaos for DNS data', 'Yes'],
+            ['hep_psbdmp', 'Data Leaks', 'Search psbdmp for Pastebin dumps', 'No'],
+            ['hep_pulsedive', 'Threat Intelligence', 'Query Pulsedive threat intelligence', 'Yes'],
+            ['hep_punkspider', 'Security', 'Search PunkSpider for website vulnerabilities', 'No'],
+            ['hep_quad9', 'DNS', 'Query Quad9 DNS', 'No'],
+            ['hep_reversewhois', 'WHOIS', 'Perform reverse WHOIS lookups', 'No'],
+            ['hep_ripe', 'Network', 'Query RIPE NCC for IP and ASN information', 'No'],
+            ['hep_riskiq', 'Threat Intelligence', 'Query RiskIQ for threat data', 'Yes'],
+            ['hep_robtex', 'Network', 'Query Robtex for DNS and network data', 'No'],
+            ['hep_s3bucket', 'Cloud Storage', 'Discover Amazon S3 buckets', 'No'],
+            ['hep_searchcode', 'Code Search', 'Search source code via searchcode', 'No'],
+            ['hep_securitytrails', 'DNS', 'Query SecurityTrails for DNS history', 'Yes'],
+            ['hep_seon', 'Fraud Detection', 'Check emails and phones via SEON', 'Yes'],
+            ['hep_shodan', 'Search Engine', 'Query Shodan for internet-connected devices', 'Yes'],
+            ['hep_similar', 'Web', 'Find similar websites', 'No'],
+            ['hep_skymem', 'Email', 'Search Skymem for email addresses', 'No'],
+            ['hep_slideshare', 'Document Search', 'Search SlideShare for presentations', 'No'],
+            ['hep_snov', 'Email', 'Find email addresses via Snov.io', 'Yes'],
+            ['hep_social', 'Social Media', 'Extract social media links', 'No'],
+            ['hep_sociallinks', 'Social Media', 'Find social media profiles via SocialLinks', 'Yes'],
+            ['hep_socialprofiles', 'Social Media', 'Search for social media profiles', 'No'],
+            ['hep_sorbs', 'Threat Intelligence', 'Check IPs against SORBS blocklist', 'No'],
+            ['hep_spamcop', 'Threat Intelligence', 'Check IPs against SpamCop blocklist', 'No'],
+            ['hep_spamhaus', 'Threat Intelligence', 'Check IPs against Spamhaus blocklists', 'No'],
+            ['hep_spider', 'Web Crawling', 'Spider websites for links and content', 'No'],
+            ['hep_spur', 'Network', 'Query Spur for IP intelligence', 'Yes'],
+            ['hep_spyonweb', 'Web Intelligence', 'Find related websites via SpyOnWeb', 'Yes'],
+            ['hep_sslcert', 'SSL/TLS', 'Extract SSL/TLS certificate information', 'No'],
+            ['hep_stackoverflow', 'Developer', 'Search Stack Overflow', 'No'],
+            ['hep_stevenblack_hosts', 'Security', 'Check against Steven Black hosts file', 'No'],
+            ['hep_strangeheaders', 'Web', 'Identify unusual HTTP headers', 'No'],
+            ['hep_subdomain_takeover', 'Security', 'Check for subdomain takeover vulnerabilities', 'No'],
+            ['hep_sublist3r', 'DNS', 'Enumerate subdomains via Sublist3r', 'No'],
+            ['hep_surbl', 'Threat Intelligence', 'Check domains against SURBL', 'No'],
+            ['hep_talosintel', 'Threat Intelligence', 'Query Cisco Talos Intelligence', 'No'],
+            ['hep_textmagic', 'Phone', 'Validate phone numbers via TextMagic', 'Yes'],
+            ['hep_threatcrowd', 'Threat Intelligence', 'Query ThreatCrowd for threat data', 'No'],
+            ['hep_threatfox', 'Threat Intelligence', 'Check against abuse.ch ThreatFox', 'No'],
+            ['hep_threatjammer', 'Threat Intelligence', 'Query ThreatJammer threat feeds', 'Yes'],
+            ['hep_threatminer', 'Threat Intelligence', 'Query ThreatMiner for threat data', 'No'],
+            ['hep_tldsearch', 'DNS', 'Search across TLDs for domain variations', 'No'],
+            ['hep_tool_cmseek', 'Web Security', 'Detect CMS and vulnerabilities via CMSeeK', 'No'],
+            ['hep_tool_dnstwist', 'DNS', 'Find typosquatting domains via dnstwist', 'No'],
+            ['hep_tool_nbtscan', 'Network', 'Scan for NetBIOS information', 'No'],
+            ['hep_tool_nmap', 'Network', 'Perform Nmap port scans', 'No'],
+            ['hep_tool_nuclei', 'Web Security', 'Scan for vulnerabilities via Nuclei', 'No'],
+            ['hep_tool_onesixtyone', 'Network', 'Scan for SNMP information', 'No'],
+            ['hep_tool_retirejs', 'Web Security', 'Detect vulnerable JavaScript libraries', 'No'],
+            ['hep_tool_snallygaster', 'Web Security', 'Find secret files on web servers', 'No'],
+            ['hep_tool_testsslsh', 'SSL/TLS', 'Test SSL/TLS configuration via testssl.sh', 'No'],
+            ['hep_tool_trufflehog', 'Security', 'Find secrets in Git repositories', 'No'],
+            ['hep_tool_wafw00f', 'Web Security', 'Detect Web Application Firewalls', 'No'],
+            ['hep_tool_wappalyzer', 'Web Technology', 'Identify web technologies via Wappalyzer', 'No'],
+            ['hep_tool_whatweb', 'Web Technology', 'Identify web technologies via WhatWeb', 'No'],
+            ['hep_torch', 'Dark Web', 'Search Torch for .onion sites', 'No'],
+            ['hep_torexits', 'Network', 'Identify Tor exit nodes', 'No'],
+            ['hep_trashpanda', 'Data Leaks', 'Search for exposed data via TrashPanda', 'No'],
+            ['hep_trumail', 'Email', 'Validate email addresses via Trumail', 'No'],
+            ['hep_twilio', 'Phone', 'Look up phone numbers via Twilio', 'Yes'],
+            ['hep_twitter', 'Social Media', 'Search Twitter for users and tweets', 'Yes'],
+            ['hep_uceprotect', 'Threat Intelligence', 'Check IPs against UCEPROTECT blocklists', 'No'],
+            ['hep_urlscan', 'Web Security', 'Scan URLs via urlscan.io', 'Yes'],
+            ['hep_venmo', 'Social Media', 'Search Venmo for payment transactions', 'No'],
+            ['hep_viewdns', 'DNS', 'Various DNS tools via ViewDNS', 'Yes'],
+            ['hep_virustotal', 'Malware Analysis', 'Scan files and URLs via VirusTotal', 'Yes'],
+            ['hep_voipbl', 'Threat Intelligence', 'Check IPs against VoIP Blacklist', 'No'],
+            ['hep_vxvault', 'Malware Analysis', 'Check against VX Vault malware database', 'No'],
+            ['hep_webanalytics', 'Web Analytics', 'Identify web analytics tools', 'No'],
+            ['hep_webframework', 'Web Technology', 'Identify web frameworks', 'No'],
+            ['hep_webserver', 'Web Technology', 'Identify web servers', 'No'],
+            ['hep_whatcms', 'Web Technology', 'Identify CMS via WhatCMS', 'Yes'],
+            ['hep_whois', 'WHOIS', 'Perform WHOIS lookups', 'No'],
+            ['hep_whoisology', 'WHOIS', 'Reverse WHOIS via Whoisology', 'Yes'],
+            ['hep_whoxy', 'WHOIS', 'WHOIS and reverse WHOIS via Whoxy', 'Yes'],
+            ['hep_wigle', 'Wireless', 'Search WiGLE for WiFi networks', 'Yes'],
+            ['hep_wikileaks', 'Data Leaks', 'Search WikiLeaks', 'No'],
+            ['hep_wikipediaedits', 'Research', 'Find Wikipedia edits by IP', 'No'],
+            ['hep_xforce', 'Threat Intelligence', 'Query IBM X-Force Exchange', 'Yes'],
+            ['hep_yandexdns', 'DNS', 'Query Yandex DNS', 'No'],
+            ['hep_zetalytics', 'DNS', 'Query Zetalytics for DNS data', 'Yes'],
+            ['hep_zonefiles', 'DNS', 'Search DNS zone files', 'Yes'],
+            ['hep_zoneh', 'Security', 'Check against Zone-H defacement database', 'No']
+        ])
+        
+        templ = self.lookup.get_template('moduleinfo.tmpl')
+        return templ.render(pageid='MODULEINFO', version=__version__, docroot=self.docroot, user_info=user_info, module_data=module_data)
 
     @cherrypy.expose
     def optsexport(self: 'HawkEyeWebUi', pattern: str = None) -> str:
@@ -1893,8 +2907,20 @@ class HawkEyeWebUi:
 
         # Start running a new scan
         scanId = HawkEyeHelpers.genScanInstanceId()
+        
+        # Get current user info to track scan ownership
+        user_info = self.auth.get_current_user()
+        created_by_user_id = None
+        created_by_admin_id = None
+        
+        if user_info:
+            if user_info['type'] == 'user':
+                created_by_user_id = user_info['id']
+            elif user_info['type'] == 'admin':
+                created_by_admin_id = user_info['id']
+        
         try:
-            p = mp.Process(target=startHawkEyeScanner, args=(self.loggingQueue, scanname, scanId, scantarget, targetType, modlist, cfg))
+            p = mp.Process(target=startHawkEyeScanner, args=(self.loggingQueue, scanname, scanId, scantarget, targetType, modlist, cfg, True, created_by_user_id, created_by_admin_id))
             p.daemon = True
             p.start()
         except Exception as e:
@@ -1908,7 +2934,6 @@ class HawkEyeWebUi:
             time.sleep(1)
         
         # Log scan creation activity
-        user_info = self.auth.get_current_user()
         if user_info:
             dbh.logUserActivity(
                 user_id=user_info['id'],
@@ -1979,14 +3004,15 @@ class HawkEyeWebUi:
 
     @cherrypy.expose
     @cherrypy.tools.json_out()
-    def scanlog(self: 'HawkEyeWebUi', id: str, limit: str = None, rowId: str = None, reverse: str = None) -> list:
+    def scanlog(self: 'HawkEyeWebUi', id: str, limit: str = "500", rowId: str = None, reverse: str = None, logType: str = None) -> list:
         """Scan log data.
 
         Args:
             id (str): scan ID
-            limit (str): TBD
-            rowId (str): TBD
-            reverse (str): TBD
+            limit (str): limit number of results (default 500, "0" for all logs)
+            rowId (str): retrieve logs starting from row ID
+            reverse (str): search result order
+            logType (str): filter by log type (INFO, WARNING, ERROR, DEBUG)
 
         Returns:
             list: scan log
@@ -1995,7 +3021,18 @@ class HawkEyeWebUi:
         retdata = []
 
         try:
-            data = dbh.scanLogs(id, limit, rowId, reverse)
+            # Convert limit to int
+            # "0" or 0 means all logs (no limit)
+            limit_int = int(limit) if limit else 500
+            
+            # If limit is 0, treat as None (all logs)
+            if limit_int == 0:
+                limit_int = None
+            
+            rowId_int = int(rowId) if rowId else 0
+            reverse_bool = reverse == "1" if reverse else False
+            
+            data = dbh.scanLogs(id, limit_int, rowId_int, reverse_bool, logType)
         except Exception:
             return retdata
 
@@ -2040,7 +3077,20 @@ class HawkEyeWebUi:
             list: scan list
         """
         dbh = HawkEyeDb(self.config)
-        data = dbh.scanInstanceList()
+        
+        # Get current user info to filter scans
+        user_info = self.auth.get_current_user()
+        user_id = None
+        admin_id = None
+        
+        if user_info:
+            if user_info['type'] == 'user':
+                user_id = user_info['id']
+            elif user_info['type'] == 'admin':
+                admin_id = user_info['id']
+        
+        # Filter scans by user/admin
+        data = dbh.scanInstanceList(user_id=user_id, admin_id=admin_id)
         retdata = []
 
         for row in data:
@@ -2302,3 +3352,193 @@ class HawkEyeWebUi:
         retdata['data'] = datamap
 
         return retdata
+
+    @cherrypy.expose
+    @cherrypy.tools.json_out()
+    def scangeodata(self: 'HawkEyeWebUi', id: str) -> dict:
+        """Get geographical location data for a scan.
+
+        Args:
+            id (str): scan ID
+
+        Returns:
+            dict: geographical data with locations and coordinates
+        """
+        import re
+        
+        dbh = HawkEyeDb(self.config)
+        retdata = {
+            'locations': [],
+            'unique_count': 0,
+            'total_count': 0
+        }
+
+        try:
+            # Get all GEOINFO events
+            geoinfo_data = dbh.scanResultEvent(id, 'GEOINFO')
+            
+            # Dictionary to track unique locations and their counts
+            location_map = {}
+            
+            for row in geoinfo_data:
+                location = row[1]  # The data field contains location info
+                
+                if location and location not in location_map:
+                    location_map[location] = {
+                        'location': location,
+                        'count': 1,
+                        'coordinates': None,
+                        'source': row[2] if len(row) > 2 else 'Unknown'
+                    }
+                elif location:
+                    location_map[location]['count'] += 1
+            
+            # Try to get coordinates using a geocoding service or predefined mappings
+            # For now, we'll use a simple approach with common locations
+            # In production, you'd use a geocoding API like OpenCage, Nominatim, etc.
+            
+            for loc_key, loc_data in location_map.items():
+                # Try to extract coordinates if available in the data
+                # Some modules might provide coordinates
+                coords = self._extract_coordinates(loc_data['location'])
+                if coords:
+                    loc_data['coordinates'] = coords
+                else:
+                    # Try to geocode the location
+                    coords = self._geocode_location(loc_data['location'])
+                    if coords:
+                        loc_data['coordinates'] = coords
+                
+                retdata['locations'].append(loc_data)
+            
+            retdata['unique_count'] = len(location_map)
+            retdata['total_count'] = sum(loc['count'] for loc in retdata['locations'])
+            
+        except Exception as e:
+            self.log.error(f"Error fetching geo data: {e}")
+            return retdata
+
+        return retdata
+    
+    def _extract_coordinates(self, location_str: str) -> dict:
+        """Extract coordinates from location string if present.
+        
+        Args:
+            location_str (str): location string that might contain coordinates
+            
+        Returns:
+            dict: {'lat': float, 'lon': float} or None
+        """
+        import re
+        
+        # Pattern to match coordinates like "40.7128, -74.0060" or "(40.7128, -74.0060)"
+        coord_pattern = r'[-+]?\d*\.?\d+\s*,\s*[-+]?\d*\.?\d+'
+        match = re.search(coord_pattern, location_str)
+        
+        if match:
+            try:
+                coords = match.group().split(',')
+                lat = float(coords[0].strip())
+                lon = float(coords[1].strip())
+                
+                # Validate coordinates
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    return {'lat': lat, 'lon': lon}
+            except (ValueError, IndexError):
+                pass
+        
+        return None
+    
+    def _geocode_location(self, location: str) -> dict:
+        """Geocode a location string to coordinates using a simple mapping.
+        
+        Args:
+            location (str): location string (e.g., "New York, US" or "London, GB")
+            
+        Returns:
+            dict: {'lat': float, 'lon': float} or None
+        """
+        # Simple mapping of common locations
+        # In production, use a proper geocoding API
+        location_lower = location.lower()
+        
+        # Common country coordinates (capital cities)
+        country_coords = {
+            'united states': {'lat': 37.0902, 'lon': -95.7129},
+            'us': {'lat': 37.0902, 'lon': -95.7129},
+            'usa': {'lat': 37.0902, 'lon': -95.7129},
+            'united kingdom': {'lat': 51.5074, 'lon': -0.1278},
+            'uk': {'lat': 51.5074, 'lon': -0.1278},
+            'gb': {'lat': 51.5074, 'lon': -0.1278},
+            'canada': {'lat': 45.4215, 'lon': -75.6972},
+            'ca': {'lat': 45.4215, 'lon': -75.6972},
+            'germany': {'lat': 52.5200, 'lon': 13.4050},
+            'de': {'lat': 52.5200, 'lon': 13.4050},
+            'france': {'lat': 48.8566, 'lon': 2.3522},
+            'fr': {'lat': 48.8566, 'lon': 2.3522},
+            'india': {'lat': 28.6139, 'lon': 77.2090},
+            'in': {'lat': 28.6139, 'lon': 77.2090},
+            'china': {'lat': 39.9042, 'lon': 116.4074},
+            'cn': {'lat': 39.9042, 'lon': 116.4074},
+            'japan': {'lat': 35.6762, 'lon': 139.6503},
+            'jp': {'lat': 35.6762, 'lon': 139.6503},
+            'australia': {'lat': -35.2809, 'lon': 149.1300},
+            'au': {'lat': -35.2809, 'lon': 149.1300},
+            'brazil': {'lat': -15.8267, 'lon': -47.9218},
+            'br': {'lat': -15.8267, 'lon': -47.9218},
+            'russia': {'lat': 55.7558, 'lon': 37.6173},
+            'ru': {'lat': 55.7558, 'lon': 37.6173},
+            'netherlands': {'lat': 52.3676, 'lon': 4.9041},
+            'nl': {'lat': 52.3676, 'lon': 4.9041},
+            'spain': {'lat': 40.4168, 'lon': -3.7038},
+            'es': {'lat': 40.4168, 'lon': -3.7038},
+            'italy': {'lat': 41.9028, 'lon': 12.4964},
+            'it': {'lat': 41.9028, 'lon': 12.4964},
+            'mexico': {'lat': 19.4326, 'lon': -99.1332},
+            'mx': {'lat': 19.4326, 'lon': -99.1332},
+            'south korea': {'lat': 37.5665, 'lon': 126.9780},
+            'kr': {'lat': 37.5665, 'lon': 126.9780},
+            'singapore': {'lat': 1.3521, 'lon': 103.8198},
+            'sg': {'lat': 1.3521, 'lon': 103.8198},
+        }
+        
+        # City coordinates
+        city_coords = {
+            'new york': {'lat': 40.7128, 'lon': -74.0060},
+            'london': {'lat': 51.5074, 'lon': -0.1278},
+            'paris': {'lat': 48.8566, 'lon': 2.3522},
+            'tokyo': {'lat': 35.6762, 'lon': 139.6503},
+            'beijing': {'lat': 39.9042, 'lon': 116.4074},
+            'moscow': {'lat': 55.7558, 'lon': 37.6173},
+            'sydney': {'lat': -33.8688, 'lon': 151.2093},
+            'berlin': {'lat': 52.5200, 'lon': 13.4050},
+            'mumbai': {'lat': 19.0760, 'lon': 72.8777},
+            'delhi': {'lat': 28.6139, 'lon': 77.2090},
+            'shanghai': {'lat': 31.2304, 'lon': 121.4737},
+            'los angeles': {'lat': 34.0522, 'lon': -118.2437},
+            'chicago': {'lat': 41.8781, 'lon': -87.6298},
+            'toronto': {'lat': 43.6532, 'lon': -79.3832},
+            'amsterdam': {'lat': 52.3676, 'lon': 4.9041},
+            'madrid': {'lat': 40.4168, 'lon': -3.7038},
+            'rome': {'lat': 41.9028, 'lon': 12.4964},
+            'singapore': {'lat': 1.3521, 'lon': 103.8198},
+            'hong kong': {'lat': 22.3193, 'lon': 114.1694},
+            'dubai': {'lat': 25.2048, 'lon': 55.2708},
+            'san francisco': {'lat': 37.7749, 'lon': -122.4194},
+            'seattle': {'lat': 47.6062, 'lon': -122.3321},
+            'boston': {'lat': 42.3601, 'lon': -71.0589},
+            'washington': {'lat': 38.9072, 'lon': -77.0369},
+            'miami': {'lat': 25.7617, 'lon': -80.1918},
+        }
+        
+        # Try to match city first
+        for city, coords in city_coords.items():
+            if city in location_lower:
+                return coords
+        
+        # Try to match country
+        for country, coords in country_coords.items():
+            if country in location_lower:
+                return coords
+        
+        return None
